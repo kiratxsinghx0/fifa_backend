@@ -120,6 +120,34 @@ async function seedPlayers(playerList) {
   return { inserted: mapped.length };
 }
 
+async function autoSetDailyPuzzle() {
+  const existing = await DailyPuzzleModel.findToday();
+  if (existing) {
+    return { alreadySet: true, ...formatPuzzleResponse(existing) };
+  }
+
+  const latest = await DailyPuzzleModel.findLatest();
+  const excludeId = latest?.player_id ?? null;
+
+  const player = await PlayerModel.findRandomExcluding(excludeId);
+  if (!player) {
+    throw Object.assign(new Error("No eligible players found in DB"), { status: 500 });
+  }
+
+  const puzzle = {
+    day: latest ? latest.day + 1 : 1,
+    player_id: player.id,
+    encoded: xorEncode(player.name.toLowerCase(), ENCODE_KEY),
+    hash: sha256(player.name.toLowerCase()),
+    previous_hash: latest?.hash ?? null,
+    set_at: new Date(),
+  };
+
+  await DailyPuzzleModel.create(puzzle);
+
+  return formatPuzzleResponse(puzzle);
+}
+
 module.exports = {
   getAllPlayers,
   getPlayerByName,
@@ -128,4 +156,5 @@ module.exports = {
   getPuzzleByDay,
   setDailyPuzzle,
   seedPlayers,
+  autoSetDailyPuzzle,
 };

@@ -94,4 +94,13 @@ async function bulkCreate(players) {
   }
 }
 
-module.exports = { createTable, findAll, findByName, findById, create, bulkCreate };
+async function findRandomExcluding(excludeId) {
+  const query = excludeId
+    ? `SELECT * FROM players WHERE CHAR_LENGTH(name) = 5 AND id != ? ORDER BY RAND() LIMIT 1`
+    : `SELECT * FROM players WHERE CHAR_LENGTH(name) = 5 ORDER BY RAND() LIMIT 1`;
+  const params = excludeId ? [excludeId] : [];
+  const [rows] = await pool.execute(query, params);
+  return rows[0] || null;
+}
+
+module.exports = { createTable, findAll, findByName, findById, create, bulkCreate, findRandomExcluding };

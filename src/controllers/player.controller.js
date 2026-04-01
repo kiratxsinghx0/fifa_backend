@@ -71,6 +71,16 @@ async function seedPlayers(req, res) {
   }
 }
 
+async function autoSetDailyPuzzle(req, res) {
+  try {
+    const result = await playerService.autoSetDailyPuzzle();
+    const status = result.alreadySet ? 200 : 201;
+    res.status(status).json({ success: true, data: result });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
 module.exports = {
   getAllPlayers,
   getPlayerByName,
@@ -79,4 +89,5 @@ module.exports = {
   getPuzzleByDay,
   setDailyPuzzle,
   seedPlayers,
+  autoSetDailyPuzzle,
 };
