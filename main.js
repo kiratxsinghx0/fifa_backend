@@ -34,7 +34,7 @@ async function bootstrap() {
     console.log("--------------------------------", process.env.MYSQLPORT);
     console.log("--------------------------------", process.env.MYSQLUSER);
     console.log("--------------------------------", process.env.MYSQLPASSWORD);
-    console.log("--------------------------------", process.env.MYSQLDATABASE);
+    console.log("--------------------------------", process.env.MYSQL_DATABASE);
   await testConnection();
   await PlayerModel.createTable();
   await DailyPuzzleModel.createTable();
