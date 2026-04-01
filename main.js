@@ -30,6 +30,11 @@ app.use((err, _req, res, _next) => {
 });
 
 async function bootstrap() {
+    console.log("--------------------------------", process.env.MYSQLHOST);
+    console.log("--------------------------------", process.env.MYSQLPORT);
+    console.log("--------------------------------", process.env.MYSQLUSER);
+    console.log("--------------------------------", process.env.MYSQLPASSWORD);
+    console.log("--------------------------------", process.env.MYSQLDATABASE);
   await testConnection();
   await PlayerModel.createTable();
   await DailyPuzzleModel.createTable();
