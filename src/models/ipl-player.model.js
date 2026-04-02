@@ -13,6 +13,10 @@ const CREATE_IPL_PLAYERS_TABLE = `
     teams         JSON          NOT NULL COMMENT 'Array of team names',
     batting       VARCHAR(50)   NOT NULL DEFAULT 'N/A',
     bowling       VARCHAR(50)   NOT NULL DEFAULT 'N/A',
+    jersey        INT           DEFAULT NULL,
+    nickname      VARCHAR(100)  DEFAULT NULL,
+    era           VARCHAR(50)   NOT NULL DEFAULT 'current',
+    popularity    VARCHAR(50)   NOT NULL DEFAULT 'regular',
     opening_hint  VARCHAR(500)  NOT NULL DEFAULT '',
     trivias       JSON          NOT NULL COMMENT 'Array of trivia strings',
     created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
@@ -47,12 +51,13 @@ async function create(player) {
   const {
     name, full_name, is_shortened,
     age, country, ipl_team, role, teams, batting, bowling,
+    jersey, nickname, era, popularity,
     opening_hint, trivias,
   } = player;
   const [result] = await pool.execute(
     `INSERT INTO ipl_players
-       (name, full_name, is_shortened, age, country, ipl_team, role, teams, batting, bowling, opening_hint, trivias)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       (name, full_name, is_shortened, age, country, ipl_team, role, teams, batting, bowling, jersey, nickname, era, popularity, opening_hint, trivias)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        full_name    = VALUES(full_name),
        is_shortened = VALUES(is_shortened),
@@ -63,6 +68,10 @@ async function create(player) {
        teams        = VALUES(teams),
        batting      = VALUES(batting),
        bowling      = VALUES(bowling),
+       jersey       = VALUES(jersey),
+       nickname     = VALUES(nickname),
+       era          = VALUES(era),
+       popularity   = VALUES(popularity),
        opening_hint = VALUES(opening_hint),
        trivias      = VALUES(trivias)`,
     [
@@ -76,6 +85,10 @@ async function create(player) {
       JSON.stringify(teams),
       batting,
       bowling,
+      jersey ?? null,
+      nickname || null,
+      era || "current",
+      popularity || "regular",
       opening_hint,
       JSON.stringify(trivias),
     ]
@@ -90,8 +103,8 @@ async function bulkCreate(players) {
     for (const p of players) {
       await conn.execute(
         `INSERT INTO ipl_players
-           (name, full_name, is_shortened, age, country, ipl_team, role, teams, batting, bowling, opening_hint, trivias)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (name, full_name, is_shortened, age, country, ipl_team, role, teams, batting, bowling, jersey, nickname, era, popularity, opening_hint, trivias)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
            full_name    = VALUES(full_name),
            is_shortened = VALUES(is_shortened),
@@ -102,6 +115,10 @@ async function bulkCreate(players) {
            teams        = VALUES(teams),
            batting      = VALUES(batting),
            bowling      = VALUES(bowling),
+           jersey       = VALUES(jersey),
+           nickname     = VALUES(nickname),
+           era          = VALUES(era),
+           popularity   = VALUES(popularity),
            opening_hint = VALUES(opening_hint),
            trivias      = VALUES(trivias)`,
         [
@@ -115,6 +132,10 @@ async function bulkCreate(players) {
           JSON.stringify(p.teams),
           p.batting,
           p.bowling,
+          p.jersey ?? null,
+          p.nickname || null,
+          p.era || "current",
+          p.popularity || "regular",
           p.opening_hint,
           JSON.stringify(p.trivias),
         ]

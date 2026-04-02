@@ -121,6 +121,10 @@ function extractHintsFromRow(row) {
     { teams },
     { batting: row.batting },
     { bowling: row.bowling },
+    { jersey: row.jersey },
+    { nickname: row.nickname },
+    { era: row.era },
+    { popularity: row.popularity },
     { openingHint: row.opening_hint },
     { trivia: trivias },
   ];
@@ -149,6 +153,10 @@ async function seedPlayers(playerList) {
       teams: findHint("teams") || [],
       batting: findHint("batting") || "N/A",
       bowling: findHint("bowling") || "N/A",
+      jersey: findHint("jersey") ?? null,
+      nickname: findHint("nickname") || null,
+      era: findHint("era") || "current",
+      popularity: findHint("popularity") || "regular",
       opening_hint: findHint("openingHint") || "",
       trivias,
     };
