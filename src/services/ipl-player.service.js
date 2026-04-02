@@ -42,7 +42,9 @@ async function getTodayPuzzle() {
   if (!puzzle) {
     const latest = await IplDailyPuzzleModel.findLatest();
     if (!latest) {
-      throw Object.assign(new Error("No IPL puzzle has been set yet"), { status: 404 });
+      const result = await autoSetDailyPuzzle();
+      const { alreadySet, ...puzzleData } = result;
+      return puzzleData;
     }
     return formatPuzzleResponse(latest);
   }
