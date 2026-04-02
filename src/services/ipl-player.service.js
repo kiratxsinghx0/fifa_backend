@@ -107,7 +107,8 @@ function formatPuzzleResponse(puzzle) {
 
 function extractHintsFromRow(row) {
   const teams = typeof row.teams === "string" ? JSON.parse(row.teams) : row.teams;
-  const trivias = typeof row.trivias === "string" ? JSON.parse(row.trivias) : row.trivias;
+  const rawTrivias = typeof row.trivias === "string" ? JSON.parse(row.trivias) : row.trivias;
+  const trivias = rawTrivias.flat();
 
   return [
     { age: row.age },
@@ -118,7 +119,7 @@ function extractHintsFromRow(row) {
     { batting: row.batting },
     { bowling: row.bowling },
     { openingHint: row.opening_hint },
-    ...trivias.map((t) => ({ trivia: t })),
+    { trivia: trivias },
   ];
 }
 
@@ -129,7 +130,10 @@ async function seedPlayers(playerList) {
       const entry = hints.find((h) => h[key] !== undefined);
       return entry ? entry[key] : null;
     };
-    const trivias = hints.filter((h) => h.trivia !== undefined).map((h) => h.trivia);
+    const triviaEntry = hints.find((h) => h.trivia !== undefined);
+    const trivias = triviaEntry
+      ? Array.isArray(triviaEntry.trivia) ? triviaEntry.trivia : [triviaEntry.trivia]
+      : [];
 
     return {
       name: p.name,
