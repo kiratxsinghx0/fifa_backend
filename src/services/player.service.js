@@ -102,6 +102,7 @@ function formatPuzzleResponse(puzzle) {
     encoded: puzzle.encoded,
     hash: puzzle.hash,
     previousHash: puzzle.previous_hash,
+    setAt: puzzle.set_at,
   };
 }
 
