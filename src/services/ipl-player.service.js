@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const IplPlayerModel = require("../models/ipl-player.model");
 const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
+const ScheduleIplPuzzleModel = require("../models/schedule-ipl-puzzle.model");
 
 const ENCODE_KEY = "fw26k";
 const WORD_LENGTH = 5;
@@ -22,11 +23,11 @@ async function getAllPlayers() {
 }
 
 async function getPlayerByName(name) {
-  const player = await IplPlayerModel.findByName(name);
-  if (!player) {
+  const rows = await IplPlayerModel.findByName(name);
+  if (!rows.length) {
     throw Object.assign(new Error(`IPL Player "${name}" not found`), { status: 404 });
   }
-  return player;
+  return rows;
 }
 
 async function getPlayerById(id) {
@@ -38,15 +39,9 @@ async function getPlayerById(id) {
 }
 
 async function getTodayPuzzle() {
-  const puzzle = await IplDailyPuzzleModel.findToday();
+  const puzzle = await IplDailyPuzzleModel.findLatest();
   if (!puzzle) {
-    const latest = await IplDailyPuzzleModel.findLatest();
-    if (!latest) {
-      const result = await autoSetDailyPuzzle();
-      const { alreadySet, ...puzzleData } = result;
-      return puzzleData;
-    }
-    return formatPuzzleResponse(latest);
+    throw Object.assign(new Error("No IPL puzzle available yet"), { status: 404 });
   }
   return formatPuzzleResponse(puzzle);
 }
@@ -59,12 +54,21 @@ async function getPuzzleByDay(day) {
   return formatPuzzleResponse(puzzle);
 }
 
-async function setDailyPuzzle(playerName) {
+/**
+ * Set a daily puzzle.
+ * @param {string} playerName - 5-letter answer token (e.g. "VIRAT")
+ * @param {string} fullName   - canonical player name to disambiguate shared tokens
+ * @param {Array}  hints      - hint data array for the puzzle
+ */
+async function setDailyPuzzle(playerName, fullName, hints) {
   const name = playerName.toUpperCase();
 
-  const player = await IplPlayerModel.findByName(name);
+  const player = await IplPlayerModel.findByNameAndPlayer(name, fullName);
   if (!player) {
-    throw Object.assign(new Error(`IPL Player "${name}" not found in DB`), { status: 400 });
+    throw Object.assign(
+      new Error(`IPL Player token "${name}" for "${fullName}" not found in DB`),
+      { status: 400 }
+    );
   }
 
   if (player.name.length !== WORD_LENGTH) {
@@ -90,6 +94,9 @@ async function setDailyPuzzle(playerName) {
     encoded: xorEncode(player.name.toLowerCase(), ENCODE_KEY),
     hash: newHash,
     previous_hash: latest?.hash ?? null,
+    full_name: player.full_name,
+    is_shortened: player.is_shortened,
+    hints: hints || null,
     set_at: new Date(),
   };
 
@@ -99,68 +106,32 @@ async function setDailyPuzzle(playerName) {
 }
 
 function formatPuzzleResponse(puzzle) {
+  let hints = puzzle.hints ?? null;
+  if (typeof hints === "string") {
+    try { hints = JSON.parse(hints); } catch { hints = null; }
+  }
   return {
     day: puzzle.day,
     encoded: puzzle.encoded,
     hash: puzzle.hash,
     previousHash: puzzle.previous_hash,
+    fullName: puzzle.full_name || null,
+    isShortened: Boolean(puzzle.is_shortened),
+    hints,
     setAt: puzzle.set_at,
   };
 }
 
-function extractHintsFromRow(row) {
-  const teams = typeof row.teams === "string" ? JSON.parse(row.teams) : row.teams;
-  const rawTrivias = typeof row.trivias === "string" ? JSON.parse(row.trivias) : row.trivias;
-  const trivias = rawTrivias.flat();
-
-  return [
-    { age: row.age },
-    { country: row.country },
-    { iplTeam: row.ipl_team },
-    { role: row.role },
-    { teams },
-    { batting: row.batting },
-    { bowling: row.bowling },
-    { jersey: row.jersey },
-    { nickname: row.nickname },
-    { era: row.era },
-    { popularity: row.popularity },
-    { openingHint: row.opening_hint },
-    { trivia: trivias },
-  ];
-}
-
+/**
+ * Seed player tokens into the registry (for autocomplete / validation).
+ * Each entry is one name-token for a player; a player typically has two.
+ */
 async function seedPlayers(playerList) {
-  const mapped = playerList.map((p) => {
-    const hints = p.hints || [];
-    const findHint = (key) => {
-      const entry = hints.find((h) => h[key] !== undefined);
-      return entry ? entry[key] : null;
-    };
-    const triviaEntry = hints.find((h) => h.trivia !== undefined);
-    const trivias = triviaEntry
-      ? Array.isArray(triviaEntry.trivia) ? triviaEntry.trivia : [triviaEntry.trivia]
-      : [];
-
-    return {
-      name: p.name,
-      full_name: p.meta?.fullName || null,
-      is_shortened: p.meta?.shortened || false,
-      age: findHint("age") || 0,
-      country: findHint("country") || "",
-      ipl_team: findHint("iplTeam") || "",
-      role: findHint("role") || "",
-      teams: findHint("teams") || [],
-      batting: findHint("batting") || "N/A",
-      bowling: findHint("bowling") || "N/A",
-      jersey: findHint("jersey") ?? null,
-      nickname: findHint("nickname") || null,
-      era: findHint("era") || "current",
-      popularity: findHint("popularity") || "regular",
-      opening_hint: findHint("openingHint") || "",
-      trivias,
-    };
-  });
+  const mapped = playerList.map((p) => ({
+    name: p.name,
+    full_name: p.meta?.fullName || p.name,
+    is_shortened: p.meta?.shortened || false,
+  }));
   await IplPlayerModel.bulkCreate(mapped);
   return { inserted: mapped.length };
 }
@@ -172,25 +143,55 @@ async function autoSetDailyPuzzle() {
   }
 
   const latest = await IplDailyPuzzleModel.findLatest();
-  const excludeId = latest?.player_id ?? null;
 
-  const player = await IplPlayerModel.findRandomExcluding(excludeId);
-  if (!player) {
+  const scheduled = await ScheduleIplPuzzleModel.findNextUnused();
+
+  let token;
+  let hints = null;
+
+  if (scheduled) {
+    token = await IplPlayerModel.findByNameAndPlayer(
+      scheduled.player_name,
+      scheduled.full_name
+    );
+    if (token) {
+      hints = scheduled.hints ?? null;
+      if (typeof hints === "string") {
+        try { hints = JSON.parse(hints); } catch { hints = null; }
+      }
+      await ScheduleIplPuzzleModel.markUsed(scheduled.id);
+    } else {
+      console.warn(
+        `[autoSet] Scheduled player "${scheduled.player_name}" / "${scheduled.full_name}" not found in ipl_players — skipping to random`
+      );
+      await ScheduleIplPuzzleModel.markUsed(scheduled.id);
+    }
+  }
+
+  if (!token) {
+    const excludeFullName = latest?.full_name ?? null;
+    token = await IplPlayerModel.findRandomExcluding(excludeFullName);
+  }
+
+  if (!token) {
     throw Object.assign(new Error("No eligible IPL players found in DB"), { status: 500 });
   }
 
   const puzzle = {
     day: latest ? latest.day + 1 : 1,
-    player_id: player.id,
-    encoded: xorEncode(player.name.toLowerCase(), ENCODE_KEY),
-    hash: sha256(player.name.toLowerCase()),
+    player_id: token.id,
+    encoded: xorEncode(token.name.toLowerCase(), ENCODE_KEY),
+    hash: sha256(token.name.toLowerCase()),
     previous_hash: latest?.hash ?? null,
+    full_name: token.full_name,
+    is_shortened: token.is_shortened,
+    hints,
     set_at: new Date(),
   };
 
   await IplDailyPuzzleModel.create(puzzle);
 
-  return formatPuzzleResponse(puzzle);
+  return { fromSchedule: !!scheduled && !!token, ...formatPuzzleResponse(puzzle) };
 }
 
 async function getPlayerCount() {
@@ -206,6 +207,5 @@ module.exports = {
   setDailyPuzzle,
   seedPlayers,
   autoSetDailyPuzzle,
-  extractHintsFromRow,
   getPlayerCount,
 };

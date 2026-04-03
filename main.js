@@ -1,15 +1,19 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const cron = require("node-cron");
 const { testConnection } = require("./src/config/db");
 const PlayerModel = require("./src/models/player.model");
 const DailyPuzzleModel = require("./src/models/daily-puzzle.model");
 const IplPlayerModel = require("./src/models/ipl-player.model");
 const IplDailyPuzzleModel = require("./src/models/ipl-daily-puzzle.model");
+const ScheduleIplPuzzleModel = require("./src/models/schedule-ipl-puzzle.model");
+const iplPlayerService = require("./src/services/ipl-player.service");
 const playerRoutes = require("./src/routes/player.routes");
 const puzzleRoutes = require("./src/routes/puzzle.routes");
 const iplPlayerRoutes = require("./src/routes/ipl-player.routes");
 const iplPuzzleRoutes = require("./src/routes/ipl-puzzle.routes");
+const iplScheduleRoutes = require("./src/routes/ipl-schedule.routes");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,6 +29,7 @@ app.use("/api/players", playerRoutes);
 app.use("/api/puzzle", puzzleRoutes);
 app.use("/api/ipl/players", iplPlayerRoutes);
 app.use("/api/ipl/puzzle", iplPuzzleRoutes);
+app.use("/api/ipl/schedule", iplScheduleRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
@@ -46,11 +51,28 @@ async function bootstrap() {
   await DailyPuzzleModel.createTable();
   await IplPlayerModel.createTable();
   await IplDailyPuzzleModel.createTable();
+  await ScheduleIplPuzzleModel.createTable();
   console.log("Database tables ensured");
 
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
+
+  // Daily puzzle cron: 6 AM IST = 00:30 UTC → "30 0 * * *"
+  cron.schedule("30 0 * * *", async () => {
+    console.log("[CRON] Running daily IPL puzzle auto-set at 6 AM IST…");
+    try {
+      const result = await iplPlayerService.autoSetDailyPuzzle();
+      if (result.alreadySet) {
+        console.log("[CRON] Puzzle already set for today, skipping.");
+      } else {
+        console.log(`[CRON] New puzzle set — day ${result.day}`);
+      }
+    } catch (err) {
+      console.error("[CRON] Failed to auto-set daily puzzle:", err.message);
+    }
+  }, { timezone: "UTC" });
+  console.log("Cron job scheduled: daily IPL puzzle at 6 AM IST (00:30 UTC)");
 }
 
 bootstrap().catch((err) => {
