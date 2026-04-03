@@ -159,4 +159,9 @@ async function findRandomExcluding(excludeId) {
   return rows[0] || null;
 }
 
-module.exports = { createTable, findAll, findByName, findById, create, bulkCreate, findRandomExcluding };
+async function getCount() {
+  const [rows] = await pool.execute("SELECT COUNT(*) AS count FROM ipl_players");
+  return rows[0].count;
+}
+
+module.exports = { createTable, findAll, findByName, findById, create, bulkCreate, findRandomExcluding, getCount };

@@ -81,6 +81,15 @@ async function autoSetDailyPuzzle(req, res) {
   }
 }
 
+async function getPlayerCount(req, res) {
+  try {
+    const count = await iplPlayerService.getPlayerCount();
+    res.json({ success: true, data: { count } });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
 module.exports = {
   getAllPlayers,
   getPlayerByName,
@@ -90,4 +99,5 @@ module.exports = {
   setDailyPuzzle,
   seedPlayers,
   autoSetDailyPuzzle,
+  getPlayerCount,
 };

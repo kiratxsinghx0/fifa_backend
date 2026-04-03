@@ -193,6 +193,10 @@ async function autoSetDailyPuzzle() {
   return formatPuzzleResponse(puzzle);
 }
 
+async function getPlayerCount() {
+  return IplPlayerModel.getCount();
+}
+
 module.exports = {
   getAllPlayers,
   getPlayerByName,
@@ -203,4 +207,5 @@ module.exports = {
   seedPlayers,
   autoSetDailyPuzzle,
   extractHintsFromRow,
+  getPlayerCount,
 };
