@@ -29,6 +29,7 @@ async function getPlayerById(req, res) {
 
 async function getTodayPuzzle(req, res) {
   try {
+    res.set("Cache-Control", "no-cache, no-store, must-revalidate");
     const puzzle = await iplPlayerService.getTodayPuzzle();
     res.json({ success: true, data: puzzle });
   } catch (err) {
