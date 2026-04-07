@@ -1,7 +1,6 @@
 const bcrypt = require("bcrypt");
 const UserModel = require("../models/user.model");
 const UserGameResultModel = require("../models/user-game-result.model");
-const LivePuzzleStatsModel = require("../models/live-puzzle-stats.model");
 const { signToken } = require("../middleware/auth");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
