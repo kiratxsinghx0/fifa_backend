@@ -14,6 +14,12 @@ const puzzleRoutes = require("./src/routes/puzzle.routes");
 const iplPlayerRoutes = require("./src/routes/ipl-player.routes");
 const iplPuzzleRoutes = require("./src/routes/ipl-puzzle.routes");
 const iplScheduleRoutes = require("./src/routes/ipl-schedule.routes");
+const authRoutes = require("./src/routes/auth.routes");
+const userStatsRoutes = require("./src/routes/user-stats.routes");
+const liveStatsRoutes = require("./src/routes/live-stats.routes");
+const UserModel = require("./src/models/user.model");
+const UserGameResultModel = require("./src/models/user-game-result.model");
+const LivePuzzleStatsModel = require("./src/models/live-puzzle-stats.model");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -24,12 +30,20 @@ app.use(express.json());
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
-
+// fifawordle routes
 app.use("/api/players", playerRoutes);
 app.use("/api/puzzle", puzzleRoutes);
+// IPL routes
+//ipl insert player routes
 app.use("/api/ipl/players", iplPlayerRoutes);
+//ipl insert puzzle routes
 app.use("/api/ipl/puzzle", iplPuzzleRoutes);
+//ipl insert schedule routes
 app.use("/api/ipl/schedule", iplScheduleRoutes);
+// Auth & user routes
+app.use("/api/auth", authRoutes);
+app.use("/api/user", userStatsRoutes);
+app.use("/api/live-stats", liveStatsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
@@ -52,6 +66,9 @@ async function bootstrap() {
   await IplPlayerModel.createTable();
   await IplDailyPuzzleModel.createTable();
   await ScheduleIplPuzzleModel.createTable();
+  await UserModel.createTable();
+  await UserGameResultModel.createTable();
+  await LivePuzzleStatsModel.createTable();
   console.log("Database tables ensured");
 
   app.listen(PORT, () => {
