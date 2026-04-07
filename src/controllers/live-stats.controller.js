@@ -1,4 +1,20 @@
 const LivePuzzleStatsModel = require("../models/live-puzzle-stats.model");
+const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
+
+const rateLimitMap = new Map();
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_PER_WINDOW = 5;
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+    rateLimitMap.set(ip, { windowStart: now, count: 1 });
+    return false;
+  }
+  entry.count++;
+  return entry.count > RATE_MAX_PER_WINDOW;
+}
 
 function formatStats(row) {
   if (!row) {
@@ -53,6 +69,21 @@ async function incrementAnonymous(req, res) {
         message: "puzzle_day, won, and num_guesses are required",
       });
     }
+
+    const ip = req.ip || req.connection?.remoteAddress || "unknown";
+    if (isRateLimited(ip)) {
+      return res.status(429).json({ success: false, message: "Too many requests" });
+    }
+
+    const latest = await IplDailyPuzzleModel.findLatest();
+    if (!latest || latest.day !== puzzle_day) {
+      return res.status(400).json({ success: false, message: "Invalid puzzle day" });
+    }
+
+    if (num_guesses < 1 || num_guesses > 6) {
+      return res.status(400).json({ success: false, message: "Invalid guess count" });
+    }
+
     await LivePuzzleStatsModel.increment(puzzle_day, won, num_guesses);
     res.json({ success: true });
   } catch (err) {

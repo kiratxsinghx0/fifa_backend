@@ -1,10 +1,9 @@
 const jwt = require("jsonwebtoken");
 
 const JWT_SECRET = process.env.JWT_SECRET || "stumpd_default_secret_change_me";
-const JWT_EXPIRES_IN = "30d";
 
 function signToken(userId) {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign({ userId }, JWT_SECRET);
 }
 
 function verifyToken(token) {

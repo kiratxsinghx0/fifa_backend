@@ -37,14 +37,20 @@ async function register(req, res) {
           time_seconds: gameResult.time_seconds,
           hints_used: gameResult.hints_used,
         });
-        await LivePuzzleStatsModel.increment(
-          gameResult.puzzle_day,
-          gameResult.won,
-          gameResult.num_guesses
-        );
       } catch {
         /* non-critical — account was still created */
       }
+    }
+
+    if (req.body.baselineStats) {
+      try {
+        const b = req.body.baselineStats;
+        await UserModel.setBaseline(user.id, {
+          played: b.gamesPlayed || 0,
+          won: b.gamesWon || 0,
+          maxStreak: b.maxStreak || 0,
+        });
+      } catch { /* non-critical */ }
     }
 
     res.status(201).json({

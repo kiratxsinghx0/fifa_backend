@@ -1,5 +1,5 @@
 const UserGameResultModel = require("../models/user-game-result.model");
-const LivePuzzleStatsModel = require("../models/live-puzzle-stats.model");
+const UserModel = require("../models/user.model");
 
 function computeStats(rows) {
   const gamesPlayed = rows.length;
@@ -8,9 +8,17 @@ function computeStats(rows) {
   let currentStreak = 0;
   let maxStreak = 0;
   let streak = 0;
-  for (const r of rows) {
-    if (r.won) {
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const prev = rows[i - 1];
+    const isConsecutiveDay = prev ? r.puzzle_day === prev.puzzle_day + 1 : true;
+
+    if (r.won && isConsecutiveDay) {
       streak++;
+      if (streak > maxStreak) maxStreak = streak;
+    } else if (r.won) {
+      streak = 1;
       if (streak > maxStreak) maxStreak = streak;
     } else {
       streak = 0;
@@ -28,11 +36,30 @@ function computeStats(rows) {
   return { gamesPlayed, gamesWon, currentStreak, maxStreak, distribution };
 }
 
+function mergeWithBaseline(stats, user) {
+  const bp = user.baseline_played || 0;
+  const bw = user.baseline_won || 0;
+  const bms = user.baseline_max_streak || 0;
+
+  if (bp <= stats.gamesPlayed) return stats;
+
+  return {
+    ...stats,
+    gamesPlayed: Math.max(stats.gamesPlayed, bp),
+    gamesWon: Math.max(stats.gamesWon, bw),
+    maxStreak: Math.max(stats.maxStreak, bms),
+  };
+}
+
 async function getMyStats(req, res) {
   try {
-    const rows = await UserGameResultModel.getStatsByUser(req.userId);
+    const [rows, user] = await Promise.all([
+      UserGameResultModel.getStatsByUser(req.userId),
+      UserModel.findById(req.userId),
+    ]);
     const stats = computeStats(rows);
-    res.json({ success: true, data: stats });
+    const merged = user ? mergeWithBaseline(stats, user) : stats;
+    res.json({ success: true, data: merged });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
@@ -63,12 +90,14 @@ async function saveResult(req, res) {
       hints_used: hints_used ?? 0,
     });
 
-    await LivePuzzleStatsModel.increment(puzzle_day, won, num_guesses);
-
-    const rows = await UserGameResultModel.getStatsByUser(req.userId);
+    const [rows, user] = await Promise.all([
+      UserGameResultModel.getStatsByUser(req.userId),
+      UserModel.findById(req.userId),
+    ]);
     const stats = computeStats(rows);
+    const merged = user ? mergeWithBaseline(stats, user) : stats;
 
-    res.status(201).json({ success: true, data: stats });
+    res.status(201).json({ success: true, data: merged });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
