@@ -85,21 +85,63 @@ async function getTodayLeaderboard(puzzleDay) {
   return rows;
 }
 
+const POINTS_EXPR = `
+  SUM(
+    CASE WHEN ugr.won = 1
+      THEN 100 + (7 - ugr.num_guesses) * 20
+           + GREATEST(0, LEAST(100, ROUND((300 - COALESCE(ugr.time_seconds, 300)) / 3)))
+      ELSE 0
+    END
+  )`;
+
 async function getAllTimeLeaderboard() {
   const [rows] = await pool.execute(
     `SELECT
        ugr.user_id,
        u.email,
-       COUNT(*) AS games_played,
        SUM(ugr.won) AS games_won,
-       ROUND(SUM(ugr.won) / COUNT(*) * 100, 1) AS win_pct,
-       ROUND(AVG(CASE WHEN ugr.won = 1 THEN ugr.num_guesses END), 2) AS avg_guesses,
-       ROUND(AVG(CASE WHEN ugr.won = 1 THEN ugr.time_seconds END), 1) AS avg_time
+       ${POINTS_EXPR} AS points
      FROM user_game_results ugr
      JOIN users u ON u.id = ugr.user_id
      GROUP BY ugr.user_id, u.email
-     HAVING games_played >= 1
-     ORDER BY games_won DESC, win_pct DESC, avg_guesses ASC
+     HAVING games_won >= 1
+     ORDER BY points DESC, games_won DESC
+     LIMIT 50`
+  );
+  return rows;
+}
+
+async function getWeeklyLeaderboard() {
+  const [rows] = await pool.execute(
+    `SELECT
+       ugr.user_id,
+       u.email,
+       SUM(ugr.won) AS games_won,
+       ${POINTS_EXPR} AS points
+     FROM user_game_results ugr
+     JOIN users u ON u.id = ugr.user_id
+     WHERE ugr.played_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+     GROUP BY ugr.user_id, u.email
+     HAVING games_won >= 1
+     ORDER BY points DESC, games_won DESC
+     LIMIT 50`
+  );
+  return rows;
+}
+
+async function getMonthlyLeaderboard() {
+  const [rows] = await pool.execute(
+    `SELECT
+       ugr.user_id,
+       u.email,
+       SUM(ugr.won) AS games_won,
+       ${POINTS_EXPR} AS points
+     FROM user_game_results ugr
+     JOIN users u ON u.id = ugr.user_id
+     WHERE ugr.played_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+     GROUP BY ugr.user_id, u.email
+     HAVING games_won >= 1
+     ORDER BY points DESC, games_won DESC
      LIMIT 50`
   );
   return rows;
@@ -108,4 +150,5 @@ async function getAllTimeLeaderboard() {
 module.exports = {
   createTable, findByUserAndDay, create, getStatsByUser,
   bulkCreate, getTodayLeaderboard, getAllTimeLeaderboard,
+  getWeeklyLeaderboard, getMonthlyLeaderboard,
 };

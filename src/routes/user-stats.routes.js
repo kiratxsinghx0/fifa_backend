@@ -6,6 +6,8 @@ router.get("/stats", authRequired, userStatsController.getMyStats);
 router.post("/result", authRequired, userStatsController.saveResult);
 router.post("/sync-results", authRequired, userStatsController.syncResults);
 router.get("/leaderboard/today", userStatsController.todayLeaderboard);
+router.get("/leaderboard/weekly", userStatsController.weeklyLeaderboard);
+router.get("/leaderboard/monthly", userStatsController.monthlyLeaderboard);
 router.get("/leaderboard/all-time", userStatsController.allTimeLeaderboard);
 
 module.exports = router;

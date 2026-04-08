@@ -2,7 +2,12 @@ const UserGameResultModel = require("../models/user-game-result.model");
 const UserModel = require("../models/user.model");
 
 const LEADERBOARD_TTL = 3 * 60 * 1000;
-const leaderboardCache = { allTime: null, allTimeExpiry: 0, today: new Map() };
+const leaderboardCache = {
+  allTime: null, allTimeExpiry: 0,
+  weekly: null, weeklyExpiry: 0,
+  monthly: null, monthlyExpiry: 0,
+  today: new Map(),
+};
 
 function computeStats(rows) {
   const gamesPlayed = rows.length;
@@ -163,6 +168,15 @@ async function todayLeaderboard(req, res) {
   }
 }
 
+function buildPeriodBoard(rows) {
+  return rows.map((r, i) => ({
+    rank: i + 1,
+    email: maskEmail(r.email),
+    games_won: Number(r.games_won),
+    points: Number(r.points),
+  }));
+}
+
 async function allTimeLeaderboard(_req, res) {
   try {
     const now = Date.now();
@@ -170,15 +184,7 @@ async function allTimeLeaderboard(_req, res) {
       return res.json({ success: true, data: leaderboardCache.allTime });
     }
     const rows = await UserGameResultModel.getAllTimeLeaderboard();
-    const board = rows.map((r, i) => ({
-      rank: i + 1,
-      email: maskEmail(r.email),
-      games_played: r.games_played,
-      games_won: r.games_won,
-      win_pct: r.win_pct,
-      avg_guesses: r.avg_guesses,
-      avg_time: r.avg_time,
-    }));
+    const board = buildPeriodBoard(rows);
     leaderboardCache.allTime = board;
     leaderboardCache.allTimeExpiry = now + LEADERBOARD_TTL;
     res.json({ success: true, data: board });
@@ -187,4 +193,40 @@ async function allTimeLeaderboard(_req, res) {
   }
 }
 
-module.exports = { getMyStats, saveResult, syncResults, todayLeaderboard, allTimeLeaderboard };
+async function weeklyLeaderboard(_req, res) {
+  try {
+    const now = Date.now();
+    if (leaderboardCache.weekly && now < leaderboardCache.weeklyExpiry) {
+      return res.json({ success: true, data: leaderboardCache.weekly });
+    }
+    const rows = await UserGameResultModel.getWeeklyLeaderboard();
+    const board = buildPeriodBoard(rows);
+    leaderboardCache.weekly = board;
+    leaderboardCache.weeklyExpiry = now + LEADERBOARD_TTL;
+    res.json({ success: true, data: board });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function monthlyLeaderboard(_req, res) {
+  try {
+    const now = Date.now();
+    if (leaderboardCache.monthly && now < leaderboardCache.monthlyExpiry) {
+      return res.json({ success: true, data: leaderboardCache.monthly });
+    }
+    const rows = await UserGameResultModel.getMonthlyLeaderboard();
+    const board = buildPeriodBoard(rows);
+    leaderboardCache.monthly = board;
+    leaderboardCache.monthlyExpiry = now + LEADERBOARD_TTL;
+    res.json({ success: true, data: board });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+module.exports = {
+  getMyStats, saveResult, syncResults,
+  todayLeaderboard, allTimeLeaderboard,
+  weeklyLeaderboard, monthlyLeaderboard,
+};
