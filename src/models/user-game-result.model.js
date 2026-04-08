@@ -50,4 +50,62 @@ async function getStatsByUser(userId) {
   return rows;
 }
 
-module.exports = { createTable, findByUserAndDay, create, getStatsByUser };
+async function bulkCreate(userId, results) {
+  if (!results || results.length === 0) return;
+  const values = results.map((r) => [
+    userId,
+    r.puzzle_day,
+    r.won ? 1 : 0,
+    r.num_guesses,
+    r.time_seconds ?? null,
+    r.hints_used ?? 0,
+  ]);
+  const placeholders = values.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
+  const flat = values.flat();
+  await pool.execute(
+    `INSERT INTO user_game_results (user_id, puzzle_day, won, num_guesses, time_seconds, hints_used)
+     VALUES ${placeholders}
+     ON DUPLICATE KEY UPDATE
+       won = VALUES(won), num_guesses = VALUES(num_guesses),
+       time_seconds = VALUES(time_seconds), hints_used = VALUES(hints_used)`,
+    flat
+  );
+}
+
+async function getTodayLeaderboard(puzzleDay) {
+  const [rows] = await pool.execute(
+    `SELECT ugr.user_id, u.email, ugr.num_guesses, ugr.time_seconds, ugr.hints_used
+     FROM user_game_results ugr
+     JOIN users u ON u.id = ugr.user_id
+     WHERE ugr.puzzle_day = ? AND ugr.won = 1
+     ORDER BY ugr.num_guesses ASC, ugr.time_seconds ASC, ugr.hints_used ASC
+     LIMIT 50`,
+    [puzzleDay]
+  );
+  return rows;
+}
+
+async function getAllTimeLeaderboard() {
+  const [rows] = await pool.execute(
+    `SELECT
+       ugr.user_id,
+       u.email,
+       COUNT(*) AS games_played,
+       SUM(ugr.won) AS games_won,
+       ROUND(SUM(ugr.won) / COUNT(*) * 100, 1) AS win_pct,
+       ROUND(AVG(CASE WHEN ugr.won = 1 THEN ugr.num_guesses END), 2) AS avg_guesses,
+       ROUND(AVG(CASE WHEN ugr.won = 1 THEN ugr.time_seconds END), 1) AS avg_time
+     FROM user_game_results ugr
+     JOIN users u ON u.id = ugr.user_id
+     GROUP BY ugr.user_id, u.email
+     HAVING games_played >= 1
+     ORDER BY games_won DESC, win_pct DESC, avg_guesses ASC
+     LIMIT 50`
+  );
+  return rows;
+}
+
+module.exports = {
+  createTable, findByUserAndDay, create, getStatsByUser,
+  bulkCreate, getTodayLeaderboard, getAllTimeLeaderboard,
+};
