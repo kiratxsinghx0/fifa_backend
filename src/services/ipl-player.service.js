@@ -5,6 +5,9 @@ const ScheduleIplPuzzleModel = require("../models/schedule-ipl-puzzle.model");
 
 const ENCODE_KEY = "fw26k";
 const WORD_LENGTH = 5;
+const CACHE_TTL = 5 * 60 * 1000;
+
+const puzzleCache = { latest: null, byDay: new Map(), expiry: 0 };
 
 function xorEncode(text, key) {
   const buf = Buffer.alloc(text.length);
@@ -39,19 +42,32 @@ async function getPlayerById(id) {
 }
 
 async function getTodayPuzzle() {
+  const now = Date.now();
+  if (puzzleCache.latest && now < puzzleCache.expiry) {
+    return puzzleCache.latest;
+  }
   const puzzle = await IplDailyPuzzleModel.findLatest();
   if (!puzzle) {
     throw Object.assign(new Error("No IPL puzzle available yet"), { status: 404 });
   }
-  return formatPuzzleResponse(puzzle);
+  const formatted = formatPuzzleResponse(puzzle);
+  puzzleCache.latest = formatted;
+  puzzleCache.expiry = now + CACHE_TTL;
+  return formatted;
 }
 
 async function getPuzzleByDay(day) {
+  const cached = puzzleCache.byDay.get(day);
+  if (cached && Date.now() < cached.expiry) {
+    return cached.data;
+  }
   const puzzle = await IplDailyPuzzleModel.findByDay(day);
   if (!puzzle) {
     throw Object.assign(new Error(`No IPL puzzle found for day ${day}`), { status: 404 });
   }
-  return formatPuzzleResponse(puzzle);
+  const formatted = formatPuzzleResponse(puzzle);
+  puzzleCache.byDay.set(day, { data: formatted, expiry: Date.now() + CACHE_TTL });
+  return formatted;
 }
 
 /**
@@ -101,6 +117,9 @@ async function setDailyPuzzle(playerName, fullName, hints) {
   };
 
   await IplDailyPuzzleModel.create(puzzle);
+
+  puzzleCache.latest = null;
+  puzzleCache.expiry = 0;
 
   return formatPuzzleResponse(puzzle);
 }
@@ -190,6 +209,9 @@ async function autoSetDailyPuzzle() {
   };
 
   await IplDailyPuzzleModel.create(puzzle);
+
+  puzzleCache.latest = null;
+  puzzleCache.expiry = 0;
 
   return { fromSchedule: !!scheduled && !!token, ...formatPuzzleResponse(puzzle) };
 }
