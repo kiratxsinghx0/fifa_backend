@@ -20,7 +20,7 @@ async function findNextUnused() {
   const [rows] = await pool.execute(
     `SELECT * FROM scheduled_ipl_puzzles
      WHERE used = 0
-     ORDER BY created_at ASC
+     ORDER BY created_at ASC, id ASC
      LIMIT 1`
   );
   return rows[0] || null;
@@ -73,14 +73,14 @@ async function bulkCreate(entries) {
 
 async function findAll() {
   const [rows] = await pool.execute(
-    `SELECT * FROM scheduled_ipl_puzzles ORDER BY created_at ASC`
+    `SELECT * FROM scheduled_ipl_puzzles ORDER BY created_at ASC, id ASC`
   );
   return rows;
 }
 
 async function findAllUnused() {
   const [rows] = await pool.execute(
-    `SELECT * FROM scheduled_ipl_puzzles WHERE used = 0 ORDER BY created_at ASC`
+    `SELECT * FROM scheduled_ipl_puzzles WHERE used = 0 ORDER BY created_at ASC, id ASC`
   );
   return rows;
 }

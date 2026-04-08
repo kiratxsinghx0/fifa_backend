@@ -52,4 +52,15 @@ async function setBaseline(userId, { played, won, maxStreak }) {
   );
 }
 
-module.exports = { createTable, findByEmail, findById, create, setBaseline };
+async function mergeBaseline(userId, { played, won, maxStreak }) {
+  await pool.execute(
+    `UPDATE users SET
+       baseline_played     = GREATEST(baseline_played, ?),
+       baseline_won        = GREATEST(baseline_won, ?),
+       baseline_max_streak = GREATEST(baseline_max_streak, ?)
+     WHERE id = ?`,
+    [played || 0, won || 0, maxStreak || 0, userId]
+  );
+}
+
+module.exports = { createTable, findByEmail, findById, create, setBaseline, mergeBaseline };

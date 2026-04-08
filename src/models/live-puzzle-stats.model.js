@@ -56,7 +56,11 @@ async function increment(puzzleDay, won, numGuesses) {
 
 async function findLatestDay() {
   const [rows] = await pool.execute(
-    "SELECT * FROM live_puzzle_stats ORDER BY puzzle_day DESC LIMIT 1"
+    `SELECT lps.* FROM live_puzzle_stats lps
+     INNER JOIN ipl_daily_puzzles idp ON idp.day = lps.puzzle_day
+     WHERE DATE(idp.set_at) <= CURDATE()
+     ORDER BY idp.day DESC
+     LIMIT 1`
   );
   return rows[0] || null;
 }

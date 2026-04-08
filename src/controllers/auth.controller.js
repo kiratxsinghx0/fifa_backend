@@ -80,6 +80,18 @@ async function login(req, res) {
     }
 
     const token = signToken(user.id);
+
+    if (req.body.baselineStats) {
+      try {
+        const b = req.body.baselineStats;
+        await UserModel.mergeBaseline(user.id, {
+          played: b.gamesPlayed || 0,
+          won: b.gamesWon || 0,
+          maxStreak: b.maxStreak || 0,
+        });
+      } catch { /* non-critical */ }
+    }
+
     res.json({
       success: true,
       data: { token, user: { id: user.id, email: user.email } },
