@@ -1,6 +1,9 @@
 const UserGameResultModel = require("../models/user-game-result.model");
 const UserModel = require("../models/user.model");
 
+const LEADERBOARD_TTL = 3 * 60 * 1000;
+const leaderboardCache = { allTime: null, allTimeExpiry: 0, today: new Map() };
+
 function computeStats(rows) {
   const gamesPlayed = rows.length;
   const gamesWon = rows.filter((r) => r.won).length;
@@ -130,20 +133,30 @@ async function syncResults(req, res) {
   }
 }
 
+function maskEmail(email) {
+  return email.replace(/(.{2})(.*)(@.*)/, "$1***$3");
+}
+
 async function todayLeaderboard(req, res) {
   try {
     const puzzleDay = parseInt(req.query.puzzle_day, 10);
     if (isNaN(puzzleDay)) {
       return res.status(400).json({ success: false, message: "puzzle_day query param is required" });
     }
+    const now = Date.now();
+    const cached = leaderboardCache.today.get(puzzleDay);
+    if (cached && now < cached.expiry) {
+      return res.json({ success: true, data: cached.data });
+    }
     const rows = await UserGameResultModel.getTodayLeaderboard(puzzleDay);
     const board = rows.map((r, i) => ({
       rank: i + 1,
-      email: r.email.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
+      email: maskEmail(r.email),
       num_guesses: r.num_guesses,
       time_seconds: r.time_seconds,
       hints_used: r.hints_used,
     }));
+    leaderboardCache.today.set(puzzleDay, { data: board, expiry: now + LEADERBOARD_TTL });
     res.json({ success: true, data: board });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -152,16 +165,22 @@ async function todayLeaderboard(req, res) {
 
 async function allTimeLeaderboard(_req, res) {
   try {
+    const now = Date.now();
+    if (leaderboardCache.allTime && now < leaderboardCache.allTimeExpiry) {
+      return res.json({ success: true, data: leaderboardCache.allTime });
+    }
     const rows = await UserGameResultModel.getAllTimeLeaderboard();
     const board = rows.map((r, i) => ({
       rank: i + 1,
-      email: r.email.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
+      email: maskEmail(r.email),
       games_played: r.games_played,
       games_won: r.games_won,
       win_pct: r.win_pct,
       avg_guesses: r.avg_guesses,
       avg_time: r.avg_time,
     }));
+    leaderboardCache.allTime = board;
+    leaderboardCache.allTimeExpiry = now + LEADERBOARD_TTL;
     res.json({ success: true, data: board });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

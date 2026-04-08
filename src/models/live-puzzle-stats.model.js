@@ -58,7 +58,7 @@ async function findLatestDay() {
   const [rows] = await pool.execute(
     `SELECT lps.* FROM live_puzzle_stats lps
      INNER JOIN ipl_daily_puzzles idp ON idp.day = lps.puzzle_day
-     WHERE DATE(idp.set_at) <= CURDATE()
+     WHERE idp.set_at < CURDATE() + INTERVAL 1 DAY
      ORDER BY idp.day DESC
      LIMIT 1`
   );

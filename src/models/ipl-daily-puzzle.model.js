@@ -25,7 +25,7 @@ async function createTable() {
 async function findToday() {
   const [rows] = await pool.execute(
     `SELECT * FROM ipl_daily_puzzles
-     WHERE DATE(set_at) = CURDATE()
+     WHERE set_at >= CURDATE() AND set_at < CURDATE() + INTERVAL 1 DAY
      ORDER BY set_at DESC
      LIMIT 1`
   );

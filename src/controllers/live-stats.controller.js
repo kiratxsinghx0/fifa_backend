@@ -4,6 +4,14 @@ const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
 const rateLimitMap = new Map();
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_PER_WINDOW = 5;
+const PRUNE_INTERVAL_MS = 120_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of rateLimitMap) {
+    if (now - entry.windowStart > RATE_WINDOW_MS) rateLimitMap.delete(ip);
+  }
+}, PRUNE_INTERVAL_MS).unref();
 
 function isRateLimited(ip) {
   const now = Date.now();

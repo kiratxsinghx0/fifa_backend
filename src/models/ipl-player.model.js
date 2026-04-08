@@ -86,11 +86,17 @@ async function bulkCreate(players) {
 }
 
 async function findRandomExcluding(excludeFullName) {
-  const query = excludeFullName
-    ? `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 AND full_name != ? ORDER BY RAND() LIMIT 1`
-    : `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 ORDER BY RAND() LIMIT 1`;
-  const params = excludeFullName ? [excludeFullName] : [];
-  const [rows] = await pool.execute(query, params);
+  const countQuery = excludeFullName
+    ? `SELECT COUNT(*) AS cnt FROM ipl_players WHERE CHAR_LENGTH(name) = 5 AND full_name != ?`
+    : `SELECT COUNT(*) AS cnt FROM ipl_players WHERE CHAR_LENGTH(name) = 5`;
+  const countParams = excludeFullName ? [excludeFullName] : [];
+  const [[{ cnt }]] = await pool.execute(countQuery, countParams);
+  if (cnt === 0) return null;
+  const offset = Math.floor(Math.random() * cnt);
+  const rowQuery = excludeFullName
+    ? `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 AND full_name != ? LIMIT 1 OFFSET ${offset}`
+    : `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 LIMIT 1 OFFSET ${offset}`;
+  const [rows] = await pool.execute(rowQuery, countParams);
   return rows[0] || null;
 }
 

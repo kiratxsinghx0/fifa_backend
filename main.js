@@ -54,12 +54,9 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ success: false, message: "Internal server error" });
 });
 
+let server;
+
 async function bootstrap() {
-    console.log("--------------------------------", process.env.MYSQLHOST);
-    console.log("--------------------------------", process.env.MYSQLPORT);
-    console.log("--------------------------------", process.env.MYSQLUSER);
-    console.log("--------------------------------", process.env.MYSQLPASSWORD);
-    console.log("--------------------------------", process.env.MYSQL_DATABASE);
   await testConnection();
   await PlayerModel.createTable();
   await DailyPuzzleModel.createTable();
@@ -71,7 +68,7 @@ async function bootstrap() {
   await LivePuzzleStatsModel.createTable();
   console.log("Database tables ensured");
 
-  app.listen(PORT, () => {
+  server = app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 
@@ -91,6 +88,25 @@ async function bootstrap() {
   }, { timezone: "UTC" });
   console.log("Cron job scheduled: daily IPL puzzle at 6 AM IST (00:30 UTC)");
 }
+
+function gracefulShutdown(signal) {
+  console.log(`${signal} received — shutting down gracefully`);
+  if (server) {
+    server.close(() => {
+      const { pool } = require("./src/config/db");
+      pool.end().then(() => {
+        console.log("MySQL pool closed");
+        process.exit(0);
+      }).catch(() => process.exit(1));
+    });
+    setTimeout(() => process.exit(1), 10_000);
+  } else {
+    process.exit(0);
+  }
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 bootstrap().catch((err) => {
   console.error("Failed to start server:", err);
