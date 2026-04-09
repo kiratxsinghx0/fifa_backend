@@ -101,7 +101,7 @@ async function findRandomExcluding(excludeFullName) {
 }
 
 async function getCount() {
-  const [rows] = await pool.execute("SELECT COUNT(DISTINCT full_name) AS count FROM ipl_players");
+  const [rows] = await pool.execute("SELECT COUNT(*) AS count FROM ipl_players");
   return rows[0].count;
 }
 
