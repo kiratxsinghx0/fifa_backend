@@ -2,6 +2,7 @@ const bcrypt = require("bcrypt");
 const UserModel = require("../models/user.model");
 const UserGameResultModel = require("../models/user-game-result.model");
 const { signToken } = require("../middleware/auth");
+const { spliceTodayCache } = require("./user-stats.controller");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SALT_ROUNDS = 10;
@@ -36,6 +37,15 @@ async function register(req, res) {
           time_seconds: gameResult.time_seconds,
           hints_used: gameResult.hints_used,
         });
+
+        const wonBool = gameResult.won === true || gameResult.won === 1;
+        if (wonBool) {
+          spliceTodayCache(gameResult.puzzle_day, email, {
+            num_guesses: gameResult.num_guesses,
+            time_seconds: gameResult.time_seconds ?? 0,
+            hints_used: gameResult.hints_used ?? 0,
+          });
+        }
       } catch {
         /* non-critical — account was still created */
       }

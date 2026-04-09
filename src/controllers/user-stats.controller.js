@@ -173,7 +173,18 @@ async function saveResult(req, res) {
 
     const existing = await UserGameResultModel.findByUserAndDay(req.userId, day);
     if (existing) {
-      return res.json({ success: true, data: { alreadySaved: true } });
+      let todayRank = 0;
+      if (existing.won) {
+        const user = await UserModel.findById(req.userId);
+        if (user) {
+          todayRank = spliceTodayCache(day, user.email, {
+            num_guesses: existing.num_guesses,
+            time_seconds: existing.time_seconds ?? 0,
+            hints_used: existing.hints_used ?? 0,
+          });
+        }
+      }
+      return res.json({ success: true, data: { alreadySaved: true, todayRank } });
     }
 
     await UserGameResultModel.create({
@@ -297,6 +308,12 @@ function spliceTodayCache(puzzleDay, email, result) {
   if (board.length > LEADERBOARD_PAD_TARGET) board.length = LEADERBOARD_PAD_TARGET;
   for (let i = 0; i < board.length; i++) board[i].rank = i + 1;
 
+  const STALE_REFRESH = 30 * 1000;
+  const minExpiry = Date.now() + STALE_REFRESH;
+  if (cached.expiry > minExpiry) {
+    cached.expiry = minExpiry;
+  }
+
   return insertIdx + 1;
 }
 
@@ -396,4 +413,5 @@ module.exports = {
   getMyStats, saveResult, syncResults,
   todayLeaderboard, allTimeLeaderboard,
   weeklyLeaderboard, monthlyLeaderboard,
+  spliceTodayCache,
 };
