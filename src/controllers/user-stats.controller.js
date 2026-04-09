@@ -285,15 +285,20 @@ function spliceTodayCache(puzzleDay, email, result) {
   const cached = leaderboardCache.today.get(puzzleDay);
   if (!cached) return 0;
 
+  const masked = maskEmail(email);
+  const board = cached.data;
+
+  const existing = board.find((b) => !b._filler && b.email === masked);
+  if (existing) return existing.rank;
+
   const entry = {
     rank: 0,
-    email: maskEmail(email),
+    email: masked,
     num_guesses: result.num_guesses,
     time_seconds: result.time_seconds ?? 0,
     hints_used: result.hints_used ?? 0,
   };
 
-  const board = cached.data;
   let insertIdx = board.length;
   for (let i = 0; i < board.length; i++) {
     if (board[i]._filler || todaySortBefore(entry, board[i]) < 0) {
