@@ -22,12 +22,22 @@ async function createTable() {
   await pool.execute(CREATE_IPL_DAILY_PUZZLES_TABLE);
 }
 
+function todayCutoff() {
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setUTCHours(0, 30, 0, 0);
+  if (now < cutoff) cutoff.setUTCDate(cutoff.getUTCDate() - 1);
+  return cutoff;
+}
+
 async function findToday() {
+  const cutoff = todayCutoff();
   const [rows] = await pool.execute(
     `SELECT * FROM ipl_daily_puzzles
-     WHERE set_at >= CURDATE() AND set_at < CURDATE() + INTERVAL 1 DAY
+     WHERE set_at >= ? AND set_at < ? + INTERVAL 1 DAY
      ORDER BY set_at DESC
-     LIMIT 1`
+     LIMIT 1`,
+    [cutoff, cutoff]
   );
   return rows[0] || null;
 }

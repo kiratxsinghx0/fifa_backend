@@ -5,8 +5,8 @@ const router = Router();
 
 router.get("/",           controller.getAllPlayers);
 router.get("/count",      controller.getPlayerCount);
-router.get("/:id",        controller.getPlayerById);
 router.get("/name/:name", controller.getPlayerByName);
+router.get("/:id",        controller.getPlayerById);
 router.post("/seed",      controller.seedPlayers);
 
 module.exports = router;

@@ -52,6 +52,9 @@ function formatStats(row) {
 async function getByDay(req, res) {
   try {
     const day = parseInt(req.params.day, 10);
+    if (isNaN(day) || day < 1) {
+      return res.status(400).json({ success: false, message: "Invalid day parameter" });
+    }
     const row = await LivePuzzleStatsModel.findByDay(day);
     res.json({ success: true, data: formatStats(row) });
   } catch (err) {

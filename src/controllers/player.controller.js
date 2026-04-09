@@ -38,7 +38,11 @@ async function getTodayPuzzle(req, res) {
 
 async function getPuzzleByDay(req, res) {
   try {
-    const puzzle = await playerService.getPuzzleByDay(parseInt(req.params.day, 10));
+    const day = parseInt(req.params.day, 10);
+    if (isNaN(day) || day < 1) {
+      return res.status(400).json({ success: false, message: "Invalid day parameter" });
+    }
+    const puzzle = await playerService.getPuzzleByDay(day);
     res.json({ success: true, data: puzzle });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

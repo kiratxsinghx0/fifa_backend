@@ -13,12 +13,18 @@ const CREATE_TABLE = `
 
     UNIQUE KEY uk_user_puzzle (user_id, puzzle_day),
     FOREIGN KEY (user_id) REFERENCES users(id),
-    KEY idx_puzzle_day (puzzle_day)
+    KEY idx_puzzle_day (puzzle_day),
+    KEY idx_played_at (played_at)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 `;
 
 async function createTable() {
   await pool.execute(CREATE_TABLE);
+  try {
+    await pool.execute(
+      `ALTER TABLE user_game_results ADD KEY idx_played_at (played_at)`
+    );
+  } catch { /* index already exists */ }
 }
 
 async function findByUserAndDay(userId, puzzleDay) {

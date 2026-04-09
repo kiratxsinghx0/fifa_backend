@@ -6,6 +6,7 @@ const ScheduleIplPuzzleModel = require("../models/schedule-ipl-puzzle.model");
 const ENCODE_KEY = "fw26k";
 const WORD_LENGTH = 5;
 const CACHE_TTL = 5 * 60 * 1000;
+const PUZZLE_CACHE_MAX_DAYS = 3;
 
 const puzzleCache = { latest: null, byDay: new Map(), expiry: 0 };
 
@@ -67,6 +68,10 @@ async function getPuzzleByDay(day) {
   }
   const formatted = formatPuzzleResponse(puzzle);
   puzzleCache.byDay.set(day, { data: formatted, expiry: Date.now() + CACHE_TTL });
+  if (puzzleCache.byDay.size > PUZZLE_CACHE_MAX_DAYS) {
+    const oldest = puzzleCache.byDay.keys().next().value;
+    puzzleCache.byDay.delete(oldest);
+  }
   return formatted;
 }
 
