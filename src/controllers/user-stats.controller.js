@@ -1,5 +1,10 @@
 const UserGameResultModel = require("../models/user-game-result.model");
+const UserHardModeResultModel = require("../models/user-hard-mode-result.model");
 const UserModel = require("../models/user.model");
+const GameProgressModel = require("../models/ipl-game-progress.model");
+const HardModeGameProgressModel = require("../models/ipl-hardmode-game-progress.model");
+const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
+const IplHardmodeDailyPuzzleModel = require("../models/ipl-hardmode-daily-puzzle.model");
 
 const LEADERBOARD_TTL = 3 * 60 * 1000;
 const TODAY_CACHE_MAX_ENTRIES = 2;
@@ -8,6 +13,11 @@ const leaderboardCache = {
   weekly: null, weeklyExpiry: 0,
   monthly: null, monthlyExpiry: 0,
   today: new Map(),
+  allTimeHard: null, allTimeHardExpiry: 0,
+  weeklyHard: null, weeklyHardExpiry: 0,
+  monthlyHard: null, monthlyHardExpiry: 0,
+  todayHard: new Map(),
+  hmEmails: new Map(),
 };
 
 const STATIC_TODAY = [
@@ -171,6 +181,11 @@ async function saveResult(req, res) {
       return res.status(400).json({ success: false, message: "Invalid hints_used" });
     }
 
+    const latestPuzzle = await IplDailyPuzzleModel.findLatest();
+    if (!latestPuzzle || day > latestPuzzle.day) {
+      return res.status(400).json({ success: false, message: "puzzle_day does not match any existing puzzle" });
+    }
+
     const existing = await UserGameResultModel.findByUserAndDay(req.userId, day);
     if (existing) {
       let todayRank = 0;
@@ -195,6 +210,8 @@ async function saveResult(req, res) {
       time_seconds: timeSec,
       hints_used: hints,
     });
+
+    GameProgressModel.markCompleted(req.userId, day).catch(() => {});
 
     const [rows, user] = await Promise.all([
       UserGameResultModel.getStatsByUser(req.userId),
@@ -331,7 +348,8 @@ async function todayLeaderboard(req, res) {
     const now = Date.now();
     const cached = leaderboardCache.today.get(puzzleDay);
     if (cached && now < cached.expiry) {
-      return res.json({ success: true, data: stripFillerFlag(cached.data) });
+      const hmSet = await getHmEmailSet(puzzleDay);
+      return res.json({ success: true, data: tagHardMode(stripFillerFlag(cached.data), hmSet) });
     }
     const rows = await UserGameResultModel.getTodayLeaderboard(puzzleDay);
     const realBoard = rows.map((r, i) => ({
@@ -347,7 +365,8 @@ async function todayLeaderboard(req, res) {
       const oldest = leaderboardCache.today.keys().next().value;
       leaderboardCache.today.delete(oldest);
     }
-    res.json({ success: true, data: stripFillerFlag(board) });
+    const hmSet = await getHmEmailSet(puzzleDay);
+    res.json({ success: true, data: tagHardMode(stripFillerFlag(board), hmSet) });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
@@ -366,49 +385,486 @@ function buildPeriodBoard(rows) {
   }));
 }
 
-async function allTimeLeaderboard(_req, res) {
+async function allTimeLeaderboard(req, res) {
   try {
     const now = Date.now();
     if (leaderboardCache.allTime && now < leaderboardCache.allTimeExpiry) {
+      const puzzleDay = parseInt(req.query.puzzle_day, 10);
+      if (puzzleDay) {
+        const hmSet = await getHmEmailSet(puzzleDay);
+        return res.json({ success: true, data: tagHardMode(leaderboardCache.allTime, hmSet) });
+      }
       return res.json({ success: true, data: leaderboardCache.allTime });
     }
     const rows = await UserGameResultModel.getAllTimeLeaderboard();
     const board = buildPeriodBoard(rows);
     leaderboardCache.allTime = board;
     leaderboardCache.allTimeExpiry = now + LEADERBOARD_TTL;
+    const puzzleDay = parseInt(req.query.puzzle_day, 10);
+    if (puzzleDay) {
+      const hmSet = await getHmEmailSet(puzzleDay);
+      return res.json({ success: true, data: tagHardMode(board, hmSet) });
+    }
     res.json({ success: true, data: board });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
 }
 
-async function weeklyLeaderboard(_req, res) {
+async function weeklyLeaderboard(req, res) {
   try {
     const now = Date.now();
     if (leaderboardCache.weekly && now < leaderboardCache.weeklyExpiry) {
+      const puzzleDay = parseInt(req.query.puzzle_day, 10);
+      if (puzzleDay) {
+        const hmSet = await getHmEmailSet(puzzleDay);
+        return res.json({ success: true, data: tagHardMode(leaderboardCache.weekly, hmSet) });
+      }
       return res.json({ success: true, data: leaderboardCache.weekly });
     }
     const rows = await UserGameResultModel.getWeeklyLeaderboard();
     const board = padPeriodBoard(buildPeriodBoard(rows), STATIC_WEEKLY);
     leaderboardCache.weekly = board;
     leaderboardCache.weeklyExpiry = now + LEADERBOARD_TTL;
+    const puzzleDay = parseInt(req.query.puzzle_day, 10);
+    if (puzzleDay) {
+      const hmSet = await getHmEmailSet(puzzleDay);
+      return res.json({ success: true, data: tagHardMode(board, hmSet) });
+    }
     res.json({ success: true, data: board });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
 }
 
-async function monthlyLeaderboard(_req, res) {
+async function monthlyLeaderboard(req, res) {
   try {
     const now = Date.now();
     if (leaderboardCache.monthly && now < leaderboardCache.monthlyExpiry) {
+      const puzzleDay = parseInt(req.query.puzzle_day, 10);
+      if (puzzleDay) {
+        const hmSet = await getHmEmailSet(puzzleDay);
+        return res.json({ success: true, data: tagHardMode(leaderboardCache.monthly, hmSet) });
+      }
       return res.json({ success: true, data: leaderboardCache.monthly });
     }
     const rows = await UserGameResultModel.getMonthlyLeaderboard();
     const board = padPeriodBoard(buildPeriodBoard(rows), STATIC_MONTHLY);
     leaderboardCache.monthly = board;
     leaderboardCache.monthlyExpiry = now + LEADERBOARD_TTL;
+    const puzzleDay = parseInt(req.query.puzzle_day, 10);
+    if (puzzleDay) {
+      const hmSet = await getHmEmailSet(puzzleDay);
+      return res.json({ success: true, data: tagHardMode(board, hmSet) });
+    }
     res.json({ success: true, data: board });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+/* ── Hard Mode helpers ── */
+
+const HM_EMAILS_TTL = 3 * 60 * 1000;
+
+async function getHmEmailSet(puzzleDay) {
+  const now = Date.now();
+  const cached = leaderboardCache.hmEmails.get(puzzleDay);
+  if (cached && now < cached.expiry) return cached.set;
+  const emails = await UserHardModeResultModel.getTodayHardModeEmails(puzzleDay);
+  const set = new Set(emails.map((e) => maskEmail(e)));
+  leaderboardCache.hmEmails.set(puzzleDay, { set, expiry: now + HM_EMAILS_TTL });
+  if (leaderboardCache.hmEmails.size > 3) {
+    const oldest = leaderboardCache.hmEmails.keys().next().value;
+    leaderboardCache.hmEmails.delete(oldest);
+  }
+  return set;
+}
+
+function tagHardMode(board, hmSet) {
+  return board.map((row) => ({
+    ...row,
+    is_hard_mode_today: hmSet.has(row.email),
+  }));
+}
+
+/* ── Hard Mode save ── */
+
+async function saveHardModeResult(req, res) {
+  try {
+    const { puzzle_day, won, num_guesses, time_seconds } = req.body;
+
+    if (puzzle_day == null || won == null || num_guesses == null) {
+      return res.status(400).json({
+        success: false,
+        message: "puzzle_day, won, and num_guesses are required",
+      });
+    }
+
+    const wonBool = won === true || won === 1;
+    const day = Number(puzzle_day);
+    const guesses = Number(num_guesses);
+    const timeSec = time_seconds != null ? Number(time_seconds) : null;
+
+    if (!Number.isInteger(day) || day < 1) {
+      return res.status(400).json({ success: false, message: "Invalid puzzle_day" });
+    }
+    if (!Number.isInteger(guesses) || guesses < 1 || guesses > 6) {
+      return res.status(400).json({ success: false, message: "num_guesses must be 1–6" });
+    }
+    if (timeSec != null && (!Number.isFinite(timeSec) || timeSec < 0)) {
+      return res.status(400).json({ success: false, message: "Invalid time_seconds" });
+    }
+
+    const latestHardPuzzle = await IplHardmodeDailyPuzzleModel.findLatest();
+    if (!latestHardPuzzle || day > latestHardPuzzle.day) {
+      return res.status(400).json({ success: false, message: "puzzle_day does not match any existing hard mode puzzle" });
+    }
+
+    const existing = await UserHardModeResultModel.findByUserAndDay(req.userId, day);
+    if (existing) {
+      let todayRank = 0;
+      if (existing.won) {
+        const user = await UserModel.findById(req.userId);
+        if (user) {
+          todayRank = spliceHardTodayCache(day, user.email, {
+            num_guesses: existing.num_guesses,
+            time_seconds: existing.time_seconds ?? 0,
+          });
+        }
+      }
+      return res.json({ success: true, data: { alreadySaved: true, todayRank } });
+    }
+
+    await UserHardModeResultModel.create({
+      user_id: req.userId,
+      puzzle_day: day,
+      won: wonBool,
+      num_guesses: guesses,
+      time_seconds: timeSec,
+    });
+
+    HardModeGameProgressModel.markCompleted(req.userId, day).catch(() => {});
+    leaderboardCache.hmEmails.delete(day);
+
+    let todayRank = 0;
+    if (wonBool) {
+      const user = await UserModel.findById(req.userId);
+      if (user) {
+        todayRank = spliceHardTodayCache(day, user.email, {
+          num_guesses: guesses,
+          time_seconds: timeSec ?? 0,
+        });
+      }
+    }
+
+    res.status(201).json({ success: true, data: { todayRank } });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+function hardTodaySortBefore(a, b) {
+  if (a.num_guesses !== b.num_guesses) return a.num_guesses - b.num_guesses;
+  const aTime = a.time_seconds ?? Infinity;
+  const bTime = b.time_seconds ?? Infinity;
+  return aTime - bTime;
+}
+
+function spliceHardTodayCache(puzzleDay, email, result) {
+  const cached = leaderboardCache.todayHard.get(puzzleDay);
+  if (!cached) return 0;
+
+  const masked = maskEmail(email);
+  const board = cached.data;
+
+  const existing = board.find((b) => b.email === masked);
+  if (existing) return existing.rank;
+
+  const entry = {
+    rank: 0,
+    email: masked,
+    num_guesses: result.num_guesses,
+    time_seconds: result.time_seconds ?? 0,
+  };
+
+  let insertIdx = board.length;
+  for (let i = 0; i < board.length; i++) {
+    if (hardTodaySortBefore(entry, board[i]) < 0) {
+      insertIdx = i;
+      break;
+    }
+  }
+
+  if (insertIdx >= LEADERBOARD_PAD_TARGET) return 0;
+
+  board.splice(insertIdx, 0, entry);
+  if (board.length > LEADERBOARD_PAD_TARGET) board.length = LEADERBOARD_PAD_TARGET;
+  for (let i = 0; i < board.length; i++) board[i].rank = i + 1;
+
+  const STALE_REFRESH = 30 * 1000;
+  const minExpiry = Date.now() + STALE_REFRESH;
+  if (cached.expiry > minExpiry) {
+    cached.expiry = minExpiry;
+  }
+
+  return insertIdx + 1;
+}
+
+/* ── Hard Mode leaderboards ── */
+
+function buildHardTodayBoard(rows) {
+  return rows.map((r, i) => ({
+    rank: i + 1,
+    email: maskEmail(r.email),
+    num_guesses: r.num_guesses,
+    time_seconds: r.time_seconds ?? 0,
+  }));
+}
+
+async function todayHardModeLeaderboard(req, res) {
+  try {
+    const puzzleDay = parseInt(req.query.puzzle_day, 10);
+    if (isNaN(puzzleDay)) {
+      return res.status(400).json({ success: false, message: "puzzle_day query param is required" });
+    }
+    const now = Date.now();
+    const cached = leaderboardCache.todayHard.get(puzzleDay);
+    if (cached && now < cached.expiry) {
+      return res.json({ success: true, data: cached.data });
+    }
+    const rows = await UserHardModeResultModel.getTodayLeaderboard(puzzleDay);
+    const board = buildHardTodayBoard(rows);
+    leaderboardCache.todayHard.set(puzzleDay, { data: board, expiry: now + LEADERBOARD_TTL });
+    if (leaderboardCache.todayHard.size > TODAY_CACHE_MAX_ENTRIES) {
+      const oldest = leaderboardCache.todayHard.keys().next().value;
+      leaderboardCache.todayHard.delete(oldest);
+    }
+    res.json({ success: true, data: board });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function allTimeHardModeLeaderboard(_req, res) {
+  try {
+    const now = Date.now();
+    if (leaderboardCache.allTimeHard && now < leaderboardCache.allTimeHardExpiry) {
+      return res.json({ success: true, data: leaderboardCache.allTimeHard });
+    }
+    const rows = await UserHardModeResultModel.getAllTimeLeaderboard();
+    const board = buildPeriodBoard(rows);
+    leaderboardCache.allTimeHard = board;
+    leaderboardCache.allTimeHardExpiry = now + LEADERBOARD_TTL;
+    res.json({ success: true, data: board });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function weeklyHardModeLeaderboard(_req, res) {
+  try {
+    const now = Date.now();
+    if (leaderboardCache.weeklyHard && now < leaderboardCache.weeklyHardExpiry) {
+      return res.json({ success: true, data: leaderboardCache.weeklyHard });
+    }
+    const rows = await UserHardModeResultModel.getWeeklyLeaderboard();
+    const board = buildPeriodBoard(rows);
+    leaderboardCache.weeklyHard = board;
+    leaderboardCache.weeklyHardExpiry = now + LEADERBOARD_TTL;
+    res.json({ success: true, data: board });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function monthlyHardModeLeaderboard(_req, res) {
+  try {
+    const now = Date.now();
+    if (leaderboardCache.monthlyHard && now < leaderboardCache.monthlyHardExpiry) {
+      return res.json({ success: true, data: leaderboardCache.monthlyHard });
+    }
+    const rows = await UserHardModeResultModel.getMonthlyLeaderboard();
+    const board = buildPeriodBoard(rows);
+    leaderboardCache.monthlyHard = board;
+    leaderboardCache.monthlyHardExpiry = now + LEADERBOARD_TTL;
+    res.json({ success: true, data: board });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+/* ── Game Progress (save / restore mid-game state) ── */
+
+const MAX_PROGRESS_JSON_SIZE = 10_000;
+
+async function saveProgress(req, res) {
+  try {
+    const { puzzle_day, hard_mode, guesses_json, elapsed_seconds, hints_used, used_trivia_json, completed } = req.body;
+
+    if (puzzle_day == null || guesses_json == null) {
+      return res.status(400).json({ success: false, message: "puzzle_day and guesses_json are required" });
+    }
+
+    const day = Number(puzzle_day);
+    if (!Number.isInteger(day) || day < 1) {
+      return res.status(400).json({ success: false, message: "Invalid puzzle_day" });
+    }
+
+    const isHard = hard_mode === true || hard_mode === 1;
+    const model = isHard ? HardModeGameProgressModel : GameProgressModel;
+
+    const guessesStr = typeof guesses_json === "string" ? guesses_json : JSON.stringify(guesses_json);
+    if (guessesStr.length > MAX_PROGRESS_JSON_SIZE) {
+      return res.status(400).json({ success: false, message: "guesses_json payload too large" });
+    }
+
+    const payload = {
+      user_id: req.userId,
+      puzzle_day: day,
+      guesses_json: guessesStr,
+      elapsed_seconds: Number(elapsed_seconds) || 0,
+      completed: completed === true || completed === 1,
+    };
+
+    if (!isHard) {
+      payload.hints_used = Number(hints_used) || 0;
+      const triviaStr = used_trivia_json != null
+        ? (typeof used_trivia_json === "string" ? used_trivia_json : JSON.stringify(used_trivia_json))
+        : null;
+      if (triviaStr && triviaStr.length > MAX_PROGRESS_JSON_SIZE) {
+        return res.status(400).json({ success: false, message: "used_trivia_json payload too large" });
+      }
+      payload.used_trivia_json = triviaStr;
+    }
+
+    await model.upsert(payload);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function getProgress(req, res) {
+  try {
+    const puzzleDay = parseInt(req.query.puzzle_day, 10);
+    if (isNaN(puzzleDay) || puzzleDay < 1) {
+      return res.status(400).json({ success: false, message: "puzzle_day query param is required" });
+    }
+
+    const isHard = req.query.hard_mode === "1" || req.query.hard_mode === "true";
+    const model = isHard ? HardModeGameProgressModel : GameProgressModel;
+
+    const row = await model.findByUserAndDay(req.userId, puzzleDay);
+    if (!row) {
+      return res.json({ success: true, data: { found: false } });
+    }
+
+    const data = {
+      found: true,
+      completed: !!row.completed,
+      guesses_json: row.guesses_json,
+      elapsed_seconds: row.elapsed_seconds ?? 0,
+    };
+
+    if (!isHard) {
+      data.hints_used = row.hints_used ?? 0;
+      data.used_trivia_json = row.used_trivia_json ?? null;
+    }
+
+    return res.json({ success: true, data });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+/* ── Godmode & Preferences ── */
+
+async function activateGodmode(req, res) {
+  try {
+    const ts = Date.now();
+    await UserModel.setGodmodeActivatedAt(req.userId, ts);
+    res.json({ success: true, data: { godmode_activated_at: ts } });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function getPreferences(req, res) {
+  try {
+    const user = await UserModel.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+    res.json({
+      success: true,
+      data: {
+        godmode_activated_at: user.godmode_activated_at ?? null,
+        hard_mode_pref: !!user.hard_mode_pref,
+      },
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function updatePreferences(req, res) {
+  try {
+    const { hard_mode_pref } = req.body;
+    if (hard_mode_pref != null) {
+      await UserModel.setHardModePref(req.userId, hard_mode_pref === true || hard_mode_pref === 1);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function getMyHardModeStats(req, res) {
+  try {
+    const rows = await UserHardModeResultModel.getStatsByUser(req.userId);
+    const stats = computeStats(rows);
+    res.json({ success: true, data: stats });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function syncHardModeResults(req, res) {
+  try {
+    const { results } = req.body;
+    if (!Array.isArray(results) || results.length === 0) {
+      return res.status(400).json({ success: false, message: "results array is required" });
+    }
+    if (results.length > SYNC_MAX_RESULTS) {
+      return res.status(400).json({ success: false, message: `results array exceeds max of ${SYNC_MAX_RESULTS}` });
+    }
+
+    const seen = new Set();
+    const valid = [];
+    for (const r of results) {
+      if (r.puzzle_day == null || r.won == null || r.num_guesses == null) continue;
+      const day = Number(r.puzzle_day);
+      const guesses = Number(r.num_guesses);
+      if (!Number.isInteger(day) || day < 1) continue;
+      if (!Number.isInteger(guesses) || guesses < 1 || guesses > 6) continue;
+      if (seen.has(day)) continue;
+      seen.add(day);
+      valid.push({
+        puzzle_day: day,
+        won: r.won === true || r.won === 1,
+        num_guesses: guesses,
+        time_seconds: r.time_seconds != null ? Number(r.time_seconds) : null,
+      });
+    }
+    if (valid.length > 0) {
+      await UserHardModeResultModel.bulkCreate(req.userId, valid);
+    }
+
+    const rows = await UserHardModeResultModel.getStatsByUser(req.userId);
+    const stats = computeStats(rows);
+
+    res.json({ success: true, data: stats, synced: valid.length });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
@@ -419,4 +875,9 @@ module.exports = {
   todayLeaderboard, allTimeLeaderboard,
   weeklyLeaderboard, monthlyLeaderboard,
   spliceTodayCache,
+  saveHardModeResult, getMyHardModeStats, syncHardModeResults,
+  todayHardModeLeaderboard, allTimeHardModeLeaderboard,
+  weeklyHardModeLeaderboard, monthlyHardModeLeaderboard,
+  saveProgress, getProgress,
+  activateGodmode, getPreferences, updatePreferences,
 };

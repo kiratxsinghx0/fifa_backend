@@ -8,18 +8,26 @@ const DailyPuzzleModel = require("./src/models/daily-puzzle.model");
 const IplPlayerModel = require("./src/models/ipl-player.model");
 const IplDailyPuzzleModel = require("./src/models/ipl-daily-puzzle.model");
 const ScheduleIplPuzzleModel = require("./src/models/schedule-ipl-puzzle.model");
+const IplHardmodeDailyPuzzleModel = require("./src/models/ipl-hardmode-daily-puzzle.model");
+const ScheduleIplHardmodePuzzleModel = require("./src/models/schedule-ipl-hardmode-puzzle.model");
 const iplPlayerService = require("./src/services/ipl-player.service");
 const playerRoutes = require("./src/routes/player.routes");
 const puzzleRoutes = require("./src/routes/puzzle.routes");
 const iplPlayerRoutes = require("./src/routes/ipl-player.routes");
 const iplPuzzleRoutes = require("./src/routes/ipl-puzzle.routes");
 const iplScheduleRoutes = require("./src/routes/ipl-schedule.routes");
+const iplHardmodeScheduleRoutes = require("./src/routes/ipl-hardmode-schedule.routes");
 const authRoutes = require("./src/routes/auth.routes");
 const userStatsRoutes = require("./src/routes/user-stats.routes");
 const liveStatsRoutes = require("./src/routes/live-stats.routes");
+const hardmodeLiveStatsRoutes = require("./src/routes/hardmode-live-stats.routes");
 const UserModel = require("./src/models/user.model");
 const UserGameResultModel = require("./src/models/user-game-result.model");
+const UserHardModeResultModel = require("./src/models/user-hard-mode-result.model");
 const LivePuzzleStatsModel = require("./src/models/live-puzzle-stats.model");
+const HardmodeLivePuzzleStatsModel = require("./src/models/hardmode-live-puzzle-stats.model");
+const GameProgressModel = require("./src/models/ipl-game-progress.model");
+const HardModeGameProgressModel = require("./src/models/ipl-hardmode-game-progress.model");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -40,10 +48,13 @@ app.use("/api/ipl/players", iplPlayerRoutes);
 app.use("/api/ipl/puzzle", iplPuzzleRoutes);
 //ipl insert schedule routes
 app.use("/api/ipl/schedule", iplScheduleRoutes);
+//ipl hard mode schedule routes
+app.use("/api/ipl/schedule/hard-mode", iplHardmodeScheduleRoutes);
 // Auth & user routes
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userStatsRoutes);
 app.use("/api/live-stats", liveStatsRoutes);
+app.use("/api/live-stats/hard-mode", hardmodeLiveStatsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
@@ -63,9 +74,15 @@ async function bootstrap() {
   await IplPlayerModel.createTable();
   await IplDailyPuzzleModel.createTable();
   await ScheduleIplPuzzleModel.createTable();
+  await IplHardmodeDailyPuzzleModel.createTable();
+  await ScheduleIplHardmodePuzzleModel.createTable();
   await UserModel.createTable();
   await UserGameResultModel.createTable();
+  await UserHardModeResultModel.createTable();
   await LivePuzzleStatsModel.createTable();
+  await HardmodeLivePuzzleStatsModel.createTable();
+  await GameProgressModel.createTable();
+  await HardModeGameProgressModel.createTable();
   console.log("Database tables ensured");
 
   server = app.listen(PORT, () => {
@@ -87,6 +104,21 @@ async function bootstrap() {
     }
   }, { timezone: "UTC" });
   console.log("Cron job scheduled: daily IPL puzzle at 6 AM IST (00:30 UTC)");
+
+  cron.schedule("31 0 * * *", async () => {
+    console.log("[CRON] Running daily IPL hard mode puzzle auto-set at 6:01 AM IST…");
+    try {
+      const result = await iplPlayerService.autoSetHardModeDailyPuzzle();
+      if (result.alreadySet) {
+        console.log("[CRON] Hard mode puzzle already set for today, skipping.");
+      } else {
+        console.log(`[CRON] New hard mode puzzle set — day ${result.day}`);
+      }
+    } catch (err) {
+      console.error("[CRON] Failed to auto-set hard mode daily puzzle:", err.message);
+    }
+  }, { timezone: "UTC" });
+  console.log("Cron job scheduled: daily IPL hard mode puzzle at 6:01 AM IST (00:31 UTC)");
 }
 
 function gracefulShutdown(signal) {

@@ -22,6 +22,8 @@ const ENSURE_BASELINE_COLS = `
 async function createTable() {
   await pool.execute(CREATE_USERS_TABLE);
   try { await pool.execute(ENSURE_BASELINE_COLS); } catch { /* columns already exist */ }
+  try { await pool.execute("ALTER TABLE users ADD COLUMN godmode_activated_at BIGINT DEFAULT NULL"); } catch { /* already exists */ }
+  try { await pool.execute("ALTER TABLE users ADD COLUMN hard_mode_pref TINYINT(1) NOT NULL DEFAULT 0"); } catch { /* already exists */ }
 }
 
 async function findByEmail(email) {
@@ -63,4 +65,21 @@ async function mergeBaseline(userId, { played, won, maxStreak }) {
   );
 }
 
-module.exports = { createTable, findByEmail, findById, create, setBaseline, mergeBaseline };
+async function setGodmodeActivatedAt(userId, timestamp) {
+  await pool.execute(
+    "UPDATE users SET godmode_activated_at = ? WHERE id = ?",
+    [timestamp, userId]
+  );
+}
+
+async function setHardModePref(userId, enabled) {
+  await pool.execute(
+    "UPDATE users SET hard_mode_pref = ? WHERE id = ?",
+    [enabled ? 1 : 0, userId]
+  );
+}
+
+module.exports = {
+  createTable, findByEmail, findById, create, setBaseline, mergeBaseline,
+  setGodmodeActivatedAt, setHardModePref,
+};

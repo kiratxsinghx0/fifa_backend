@@ -1,6 +1,7 @@
 const bcrypt = require("bcrypt");
 const UserModel = require("../models/user.model");
 const UserGameResultModel = require("../models/user-game-result.model");
+const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
 const { signToken } = require("../middleware/auth");
 const { spliceTodayCache } = require("./user-stats.controller");
 
@@ -29,22 +30,35 @@ async function register(req, res) {
 
     if (gameResult && typeof gameResult === "object") {
       try {
-        await UserGameResultModel.create({
-          user_id: user.id,
-          puzzle_day: gameResult.puzzle_day,
-          won: gameResult.won,
-          num_guesses: gameResult.num_guesses,
-          time_seconds: gameResult.time_seconds,
-          hints_used: gameResult.hints_used,
-        });
-
+        const day = Number(gameResult.puzzle_day);
+        const guesses = Number(gameResult.num_guesses);
         const wonBool = gameResult.won === true || gameResult.won === 1;
-        if (wonBool) {
-          spliceTodayCache(gameResult.puzzle_day, email, {
-            num_guesses: gameResult.num_guesses,
-            time_seconds: gameResult.time_seconds ?? 0,
-            hints_used: gameResult.hints_used ?? 0,
+        const timeSec = gameResult.time_seconds != null ? Number(gameResult.time_seconds) : null;
+        const hints = Number(gameResult.hints_used ?? 0);
+
+        const latestPuzzle = await IplDailyPuzzleModel.findLatest();
+        const isValid =
+          Number.isInteger(day) && day >= 1 &&
+          Number.isInteger(guesses) && guesses >= 1 && guesses <= 6 &&
+          latestPuzzle && day <= latestPuzzle.day;
+
+        if (isValid) {
+          await UserGameResultModel.create({
+            user_id: user.id,
+            puzzle_day: day,
+            won: wonBool,
+            num_guesses: guesses,
+            time_seconds: timeSec,
+            hints_used: hints,
           });
+
+          if (wonBool) {
+            spliceTodayCache(day, email, {
+              num_guesses: guesses,
+              time_seconds: timeSec ?? 0,
+              hints_used: hints,
+            });
+          }
         }
       } catch {
         /* non-critical — account was still created */
@@ -64,7 +78,12 @@ async function register(req, res) {
 
     res.status(201).json({
       success: true,
-      data: { token, user: { id: user.id, email: user.email } },
+      data: {
+        token,
+        user: { id: user.id, email: user.email },
+        godmode_activated_at: null,
+        hard_mode_pref: false,
+      },
     });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -104,7 +123,12 @@ async function login(req, res) {
 
     res.json({
       success: true,
-      data: { token, user: { id: user.id, email: user.email } },
+      data: {
+        token,
+        user: { id: user.id, email: user.email },
+        godmode_activated_at: user.godmode_activated_at ?? null,
+        hard_mode_pref: !!user.hard_mode_pref,
+      },
     });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

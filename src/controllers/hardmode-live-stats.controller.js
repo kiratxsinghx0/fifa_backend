@@ -1,5 +1,5 @@
-const LivePuzzleStatsModel = require("../models/live-puzzle-stats.model");
-const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
+const HardmodeLivePuzzleStatsModel = require("../models/hardmode-live-puzzle-stats.model");
+const IplHardmodeDailyPuzzleModel = require("../models/ipl-hardmode-daily-puzzle.model");
 
 const rateLimitMap = new Map();
 const RATE_WINDOW_MS = 60_000;
@@ -55,7 +55,7 @@ async function getByDay(req, res) {
     if (isNaN(day) || day < 1) {
       return res.status(400).json({ success: false, message: "Invalid day parameter" });
     }
-    const row = await LivePuzzleStatsModel.findByDay(day);
+    const row = await HardmodeLivePuzzleStatsModel.findByDay(day);
     res.json({ success: true, data: formatStats(row) });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -64,7 +64,7 @@ async function getByDay(req, res) {
 
 async function getLatest(req, res) {
   try {
-    const row = await LivePuzzleStatsModel.findLatestDay();
+    const row = await HardmodeLivePuzzleStatsModel.findLatestDay();
     res.json({ success: true, data: formatStats(row) });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -89,7 +89,7 @@ async function incrementAnonymous(req, res) {
       return res.status(429).json({ success: false, message: "Too many requests" });
     }
 
-    const latest = await IplDailyPuzzleModel.findLatest();
+    const latest = await IplHardmodeDailyPuzzleModel.findLatest();
     if (!latest || latest.day !== day) {
       return res.status(400).json({ success: false, message: "Invalid puzzle day" });
     }
@@ -98,7 +98,7 @@ async function incrementAnonymous(req, res) {
       return res.status(400).json({ success: false, message: "Invalid guess count" });
     }
 
-    await LivePuzzleStatsModel.increment(day, won, guesses);
+    await HardmodeLivePuzzleStatsModel.increment(day, won, guesses);
     res.json({ success: true });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

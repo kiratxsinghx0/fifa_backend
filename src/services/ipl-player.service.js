@@ -2,6 +2,8 @@ const crypto = require("crypto");
 const IplPlayerModel = require("../models/ipl-player.model");
 const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
 const ScheduleIplPuzzleModel = require("../models/schedule-ipl-puzzle.model");
+const IplHardmodeDailyPuzzleModel = require("../models/ipl-hardmode-daily-puzzle.model");
+const ScheduleIplHardmodePuzzleModel = require("../models/schedule-ipl-hardmode-puzzle.model");
 
 const ENCODE_KEY = "fw26k";
 const WORD_LENGTH = 5;
@@ -9,6 +11,7 @@ const CACHE_TTL = 5 * 60 * 1000;
 const PUZZLE_CACHE_MAX_DAYS = 3;
 
 const puzzleCache = { latest: null, byDay: new Map(), expiry: 0 };
+const hardModePuzzleCache = { latest: null, expiry: 0 };
 
 function xorEncode(text, key) {
   const buf = Buffer.alloc(text.length);
@@ -225,6 +228,148 @@ async function getPlayerCount() {
   return IplPlayerModel.getCount();
 }
 
+async function getHardModeTodayPuzzle() {
+  const now = Date.now();
+  if (hardModePuzzleCache.latest && now < hardModePuzzleCache.expiry) {
+    return hardModePuzzleCache.latest;
+  }
+  const puzzle = await IplHardmodeDailyPuzzleModel.findLatest();
+  if (!puzzle) {
+    throw Object.assign(new Error("No hard mode puzzle available yet"), { status: 404 });
+  }
+  const formatted = formatPuzzleResponse(puzzle);
+
+  let yesterdayAnswer = null;
+  if (puzzle.day > 1) {
+    const yesterday = await IplHardmodeDailyPuzzleModel.findByDay(puzzle.day - 1);
+    if (yesterday) {
+      yesterdayAnswer = yesterday.full_name;
+    }
+  }
+  formatted.yesterdayAnswer = yesterdayAnswer;
+
+  hardModePuzzleCache.latest = formatted;
+  hardModePuzzleCache.expiry = now + CACHE_TTL;
+  return formatted;
+}
+
+async function autoSetHardModeDailyPuzzle() {
+  const existing = await IplHardmodeDailyPuzzleModel.findToday();
+  if (existing) {
+    return { alreadySet: true, ...formatPuzzleResponse(existing) };
+  }
+
+  const latest = await IplHardmodeDailyPuzzleModel.findLatest();
+  const normalPuzzle = await IplDailyPuzzleModel.findLatest();
+
+  const scheduled = await ScheduleIplHardmodePuzzleModel.findNextUnused();
+
+  let token;
+  let hints = null;
+
+  if (scheduled) {
+    token = await IplPlayerModel.findByNameAndPlayer(
+      scheduled.player_name,
+      scheduled.full_name
+    );
+    if (token) {
+      hints = scheduled.hints ?? null;
+      if (typeof hints === "string") {
+        try { hints = JSON.parse(hints); } catch { hints = null; }
+      }
+      await ScheduleIplHardmodePuzzleModel.markUsed(scheduled.id);
+    } else {
+      console.warn(
+        `[autoSet-hard] Scheduled hard mode player "${scheduled.player_name}" / "${scheduled.full_name}" not found in ipl_players — skipping to random`
+      );
+      await ScheduleIplHardmodePuzzleModel.markUsed(scheduled.id);
+    }
+  }
+
+  if (!token) {
+    const excludeNames = [];
+    if (latest?.full_name) excludeNames.push(latest.full_name);
+    if (normalPuzzle?.full_name) excludeNames.push(normalPuzzle.full_name);
+    token = await IplPlayerModel.findRandomExcludingMultiple(excludeNames);
+  }
+
+  if (!token) {
+    throw Object.assign(new Error("No eligible IPL players found for hard mode"), { status: 500 });
+  }
+
+  const puzzle = {
+    day: latest ? latest.day + 1 : 1,
+    player_id: token.id,
+    encoded: xorEncode(token.name.toLowerCase(), ENCODE_KEY),
+    hash: sha256(token.name.toLowerCase()),
+    previous_hash: latest?.hash ?? null,
+    full_name: token.full_name,
+    is_shortened: token.is_shortened,
+    hints,
+    set_at: new Date(),
+  };
+
+  await IplHardmodeDailyPuzzleModel.create(puzzle);
+
+  hardModePuzzleCache.latest = null;
+  hardModePuzzleCache.expiry = 0;
+
+  return { fromSchedule: !!scheduled && !!token, ...formatPuzzleResponse(puzzle) };
+}
+
+/**
+ * Manually set a hard mode daily puzzle (no hints in hard mode).
+ * @param {string} playerName - 5-letter answer token
+ * @param {string} fullName   - canonical player name
+ */
+async function setHardModeDailyPuzzle(playerName, fullName) {
+  const name = playerName.toUpperCase();
+
+  const player = await IplPlayerModel.findByNameAndPlayer(name, fullName);
+  if (!player) {
+    throw Object.assign(
+      new Error(`IPL Player token "${name}" for "${fullName}" not found in DB`),
+      { status: 400 }
+    );
+  }
+
+  if (player.name.length !== WORD_LENGTH) {
+    throw Object.assign(
+      new Error(`"${player.name}" is ${player.name.length} letters — must be exactly ${WORD_LENGTH}`),
+      { status: 400 }
+    );
+  }
+
+  const latest = await IplHardmodeDailyPuzzleModel.findLatest();
+
+  const newHash = sha256(player.name.toLowerCase());
+  if (latest && latest.hash === newHash) {
+    throw Object.assign(
+      new Error(`"${player.name}" is already the current hard mode puzzle. Pick a different player.`),
+      { status: 409 }
+    );
+  }
+
+  const puzzle = {
+    day: latest ? latest.day + 1 : 1,
+    player_id: player.id,
+    encoded: xorEncode(player.name.toLowerCase(), ENCODE_KEY),
+    hash: newHash,
+    previous_hash: latest?.hash ?? null,
+    full_name: player.full_name,
+    is_shortened: player.is_shortened,
+    hints: null,
+    set_at: new Date(),
+  };
+
+  await IplHardmodeDailyPuzzleModel.create(puzzle);
+
+  hardModePuzzleCache.latest = null;
+  hardModePuzzleCache.expiry = 0;
+
+  return formatPuzzleResponse(puzzle);
+}
+
 module.exports = {
   getAllPlayers,
   getPlayerByName,
@@ -235,4 +380,7 @@ module.exports = {
   seedPlayers,
   autoSetDailyPuzzle,
   getPlayerCount,
+  getHardModeTodayPuzzle,
+  autoSetHardModeDailyPuzzle,
+  setHardModeDailyPuzzle,
 };

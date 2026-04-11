@@ -94,9 +94,10 @@ async function findRandomExcluding(excludeFullName) {
   if (cnt === 0) return null;
   const offset = Math.floor(Math.random() * cnt);
   const rowQuery = excludeFullName
-    ? `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 AND full_name != ? LIMIT 1 OFFSET ${offset}`
-    : `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 LIMIT 1 OFFSET ${offset}`;
-  const [rows] = await pool.execute(rowQuery, countParams);
+    ? `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 AND full_name != ? LIMIT 1 OFFSET ?`
+    : `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 LIMIT 1 OFFSET ?`;
+  const rowParams = excludeFullName ? [excludeFullName, offset] : [offset];
+  const [rows] = await pool.execute(rowQuery, rowParams);
   return rows[0] || null;
 }
 
@@ -105,8 +106,21 @@ async function getCount() {
   return rows[0].count;
 }
 
+async function findRandomExcludingMultiple(excludeFullNames) {
+  const names = (excludeFullNames || []).filter(Boolean);
+  if (names.length === 0) return findRandomExcluding(null);
+  const placeholders = names.map(() => "?").join(", ");
+  const countQuery = `SELECT COUNT(*) AS cnt FROM ipl_players WHERE CHAR_LENGTH(name) = 5 AND full_name NOT IN (${placeholders})`;
+  const [[{ cnt }]] = await pool.execute(countQuery, names);
+  if (cnt === 0) return null;
+  const offset = Math.floor(Math.random() * cnt);
+  const rowQuery = `SELECT * FROM ipl_players WHERE CHAR_LENGTH(name) = 5 AND full_name NOT IN (${placeholders}) LIMIT 1 OFFSET ?`;
+  const [rows] = await pool.execute(rowQuery, [...names, offset]);
+  return rows[0] || null;
+}
+
 module.exports = {
   createTable, findAll, findByName, findByNameAndPlayer,
   findById, findByFullName, create, bulkCreate,
-  findRandomExcluding, getCount,
+  findRandomExcluding, findRandomExcludingMultiple, getCount,
 };

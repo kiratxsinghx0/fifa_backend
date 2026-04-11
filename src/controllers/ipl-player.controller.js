@@ -101,6 +101,42 @@ async function getPlayerCount(req, res) {
   }
 }
 
+async function getHardModeTodayPuzzle(req, res) {
+  try {
+    res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+    const puzzle = await iplPlayerService.getHardModeTodayPuzzle();
+    res.json({ success: true, data: puzzle });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function autoSetHardModeDailyPuzzle(req, res) {
+  try {
+    const result = await iplPlayerService.autoSetHardModeDailyPuzzle();
+    const status = result.alreadySet ? 200 : 201;
+    res.status(status).json({ success: true, data: result });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function setHardModeDailyPuzzle(req, res) {
+  try {
+    const { player_name, full_name } = req.body;
+    if (!player_name || typeof player_name !== "string") {
+      return res.status(400).json({ success: false, message: "player_name is required (5-letter answer token)" });
+    }
+    if (!full_name || typeof full_name !== "string") {
+      return res.status(400).json({ success: false, message: "full_name is required to identify the player" });
+    }
+    const result = await iplPlayerService.setHardModeDailyPuzzle(player_name, full_name);
+    res.status(201).json({ success: true, data: result });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
 module.exports = {
   getAllPlayers,
   getPlayerByName,
@@ -111,4 +147,7 @@ module.exports = {
   seedPlayers,
   autoSetDailyPuzzle,
   getPlayerCount,
+  getHardModeTodayPuzzle,
+  autoSetHardModeDailyPuzzle,
+  setHardModeDailyPuzzle,
 };

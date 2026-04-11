@@ -1,9 +1,9 @@
 const { pool } = require("../config/db");
 
-const CREATE_IPL_DAILY_PUZZLES_TABLE = `
-  CREATE TABLE IF NOT EXISTS ipl_daily_puzzles (
+const CREATE_IPL_HARDMODE_DAILY_PUZZLES_TABLE = `
+  CREATE TABLE IF NOT EXISTS ipl_hardmode_daily_puzzles (
     id            INT AUTO_INCREMENT PRIMARY KEY,
-    day           INT           NOT NULL COMMENT 'Puzzle day number',
+    day           INT           NOT NULL COMMENT 'Hard-mode puzzle day number',
     player_id     INT           NOT NULL,
     encoded       VARCHAR(50)   NOT NULL COMMENT 'XOR-encoded player token (base64)',
     hash          VARCHAR(128)  NOT NULL COMMENT 'SHA-256 of lowercase player name',
@@ -19,7 +19,7 @@ const CREATE_IPL_DAILY_PUZZLES_TABLE = `
 `;
 
 async function createTable() {
-  await pool.execute(CREATE_IPL_DAILY_PUZZLES_TABLE);
+  await pool.execute(CREATE_IPL_HARDMODE_DAILY_PUZZLES_TABLE);
 }
 
 function todayCutoff() {
@@ -34,7 +34,7 @@ async function findToday() {
   const cutoff = todayCutoff();
   const cutoffEnd = new Date(cutoff.getTime() + 24 * 60 * 60 * 1000);
   const [rows] = await pool.execute(
-    `SELECT * FROM ipl_daily_puzzles
+    `SELECT * FROM ipl_hardmode_daily_puzzles
      WHERE set_at >= ? AND set_at < ?
      ORDER BY set_at DESC
      LIMIT 1`,
@@ -45,7 +45,7 @@ async function findToday() {
 
 async function findByDay(day) {
   const [rows] = await pool.execute(
-    `SELECT * FROM ipl_daily_puzzles WHERE day = ?`,
+    `SELECT * FROM ipl_hardmode_daily_puzzles WHERE day = ?`,
     [day]
   );
   return rows[0] || null;
@@ -53,7 +53,7 @@ async function findByDay(day) {
 
 async function findLatest() {
   const [rows] = await pool.execute(
-    `SELECT * FROM ipl_daily_puzzles ORDER BY day DESC LIMIT 1`
+    `SELECT * FROM ipl_hardmode_daily_puzzles ORDER BY day DESC LIMIT 1`
   );
   return rows[0] || null;
 }
@@ -61,7 +61,7 @@ async function findLatest() {
 async function create(puzzle) {
   const { day, player_id, encoded, hash, previous_hash, full_name, is_shortened, hints, set_at } = puzzle;
   const [result] = await pool.execute(
-    `INSERT INTO ipl_daily_puzzles (day, player_id, encoded, hash, previous_hash, full_name, is_shortened, hints, set_at)
+    `INSERT INTO ipl_hardmode_daily_puzzles (day, player_id, encoded, hash, previous_hash, full_name, is_shortened, hints, set_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       day, player_id, encoded, hash,
