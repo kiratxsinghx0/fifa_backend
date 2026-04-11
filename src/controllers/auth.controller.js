@@ -1,7 +1,9 @@
 const bcrypt = require("bcrypt");
 const UserModel = require("../models/user.model");
 const UserGameResultModel = require("../models/user-game-result.model");
+const UserHardModeResultModel = require("../models/user-hard-mode-result.model");
 const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
+const IplHardmodeDailyPuzzleModel = require("../models/ipl-hardmode-daily-puzzle.model");
 const { signToken } = require("../middleware/auth");
 const { spliceTodayCache } = require("./user-stats.controller");
 
@@ -28,6 +30,9 @@ async function register(req, res) {
     const user = await UserModel.create(email, hash);
     const token = signToken(user.id);
 
+    let godmodeActivatedAt = null;
+    const isHardMode = gameResult?.hard_mode === true || gameResult?.hard_mode === 1;
+
     if (gameResult && typeof gameResult === "object") {
       try {
         const day = Number(gameResult.puzzle_day);
@@ -36,28 +41,51 @@ async function register(req, res) {
         const timeSec = gameResult.time_seconds != null ? Number(gameResult.time_seconds) : null;
         const hints = Number(gameResult.hints_used ?? 0);
 
-        const latestPuzzle = await IplDailyPuzzleModel.findLatest();
-        const isValid =
-          Number.isInteger(day) && day >= 1 &&
-          Number.isInteger(guesses) && guesses >= 1 && guesses <= 6 &&
-          latestPuzzle && day <= latestPuzzle.day;
+        if (isHardMode) {
+          const latestHardPuzzle = await IplHardmodeDailyPuzzleModel.findLatest();
+          const isValid =
+            Number.isInteger(day) && day >= 1 &&
+            Number.isInteger(guesses) && guesses >= 1 && guesses <= 6 &&
+            latestHardPuzzle && day <= latestHardPuzzle.day;
 
-        if (isValid) {
-          await UserGameResultModel.create({
-            user_id: user.id,
-            puzzle_day: day,
-            won: wonBool,
-            num_guesses: guesses,
-            time_seconds: timeSec,
-            hints_used: hints,
-          });
-
-          if (wonBool) {
-            spliceTodayCache(day, email, {
+          if (isValid) {
+            await UserHardModeResultModel.create({
+              user_id: user.id,
+              puzzle_day: day,
+              won: wonBool,
               num_guesses: guesses,
-              time_seconds: timeSec ?? 0,
+              time_seconds: timeSec,
+            });
+
+            if (wonBool) {
+              godmodeActivatedAt = Date.now();
+              await UserModel.setGodmodeActivatedAt(user.id, godmodeActivatedAt);
+            }
+          }
+        } else {
+          const latestPuzzle = await IplDailyPuzzleModel.findLatest();
+          const isValid =
+            Number.isInteger(day) && day >= 1 &&
+            Number.isInteger(guesses) && guesses >= 1 && guesses <= 6 &&
+            latestPuzzle && day <= latestPuzzle.day;
+
+          if (isValid) {
+            await UserGameResultModel.create({
+              user_id: user.id,
+              puzzle_day: day,
+              won: wonBool,
+              num_guesses: guesses,
+              time_seconds: timeSec,
               hints_used: hints,
             });
+
+            if (wonBool) {
+              spliceTodayCache(day, email, {
+                num_guesses: guesses,
+                time_seconds: timeSec ?? 0,
+                hints_used: hints,
+              });
+            }
           }
         }
       } catch {
@@ -81,8 +109,8 @@ async function register(req, res) {
       data: {
         token,
         user: { id: user.id, email: user.email },
-        godmode_activated_at: null,
-        hard_mode_pref: false,
+        godmode_activated_at: godmodeActivatedAt,
+        hard_mode_pref: isHardMode,
       },
     });
   } catch (err) {

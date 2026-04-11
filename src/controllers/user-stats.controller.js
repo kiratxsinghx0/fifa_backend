@@ -782,6 +782,16 @@ async function getProgress(req, res) {
 
 async function activateGodmode(req, res) {
   try {
+    const latestHardPuzzle = await IplHardmodeDailyPuzzleModel.findLatest();
+    if (!latestHardPuzzle) {
+      return res.status(403).json({ success: false, message: "No hard mode puzzle available" });
+    }
+
+    const hmResult = await UserHardModeResultModel.findByUserAndDay(req.userId, latestHardPuzzle.day);
+    if (!hmResult || !hmResult.won) {
+      return res.status(403).json({ success: false, message: "Must win today's hard mode to unlock Godmode" });
+    }
+
     const ts = Date.now();
     await UserModel.setGodmodeActivatedAt(req.userId, ts);
     res.json({ success: true, data: { godmode_activated_at: ts } });
