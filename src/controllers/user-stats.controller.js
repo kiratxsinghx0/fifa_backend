@@ -250,6 +250,7 @@ async function syncResults(req, res) {
     const seen = new Set();
     const valid = [];
     for (const r of results) {
+      if (r.hard_mode === true || r.hard_mode === 1) continue;
       if (r.puzzle_day == null || r.won == null || r.num_guesses == null) continue;
       const day = Number(r.puzzle_day);
       const guesses = Number(r.num_guesses);
@@ -348,7 +349,7 @@ async function todayLeaderboard(req, res) {
     const now = Date.now();
     const cached = leaderboardCache.today.get(puzzleDay);
     if (cached && now < cached.expiry) {
-      const hmSet = await getHmEmailSet(puzzleDay);
+      const hmSet = await getHmEmailSet();
       return res.json({ success: true, data: tagHardMode(stripFillerFlag(cached.data), hmSet) });
     }
     const rows = await UserGameResultModel.getTodayLeaderboard(puzzleDay);
@@ -365,7 +366,7 @@ async function todayLeaderboard(req, res) {
       const oldest = leaderboardCache.today.keys().next().value;
       leaderboardCache.today.delete(oldest);
     }
-    const hmSet = await getHmEmailSet(puzzleDay);
+    const hmSet = await getHmEmailSet();
     res.json({ success: true, data: tagHardMode(stripFillerFlag(board), hmSet) });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -391,7 +392,7 @@ async function allTimeLeaderboard(req, res) {
     if (leaderboardCache.allTime && now < leaderboardCache.allTimeExpiry) {
       const puzzleDay = parseInt(req.query.puzzle_day, 10);
       if (puzzleDay) {
-        const hmSet = await getHmEmailSet(puzzleDay);
+        const hmSet = await getHmEmailSet();
         return res.json({ success: true, data: tagHardMode(leaderboardCache.allTime, hmSet) });
       }
       return res.json({ success: true, data: leaderboardCache.allTime });
@@ -402,7 +403,7 @@ async function allTimeLeaderboard(req, res) {
     leaderboardCache.allTimeExpiry = now + LEADERBOARD_TTL;
     const puzzleDay = parseInt(req.query.puzzle_day, 10);
     if (puzzleDay) {
-      const hmSet = await getHmEmailSet(puzzleDay);
+      const hmSet = await getHmEmailSet();
       return res.json({ success: true, data: tagHardMode(board, hmSet) });
     }
     res.json({ success: true, data: board });
@@ -417,7 +418,7 @@ async function weeklyLeaderboard(req, res) {
     if (leaderboardCache.weekly && now < leaderboardCache.weeklyExpiry) {
       const puzzleDay = parseInt(req.query.puzzle_day, 10);
       if (puzzleDay) {
-        const hmSet = await getHmEmailSet(puzzleDay);
+        const hmSet = await getHmEmailSet();
         return res.json({ success: true, data: tagHardMode(leaderboardCache.weekly, hmSet) });
       }
       return res.json({ success: true, data: leaderboardCache.weekly });
@@ -428,7 +429,7 @@ async function weeklyLeaderboard(req, res) {
     leaderboardCache.weeklyExpiry = now + LEADERBOARD_TTL;
     const puzzleDay = parseInt(req.query.puzzle_day, 10);
     if (puzzleDay) {
-      const hmSet = await getHmEmailSet(puzzleDay);
+      const hmSet = await getHmEmailSet();
       return res.json({ success: true, data: tagHardMode(board, hmSet) });
     }
     res.json({ success: true, data: board });
@@ -443,7 +444,7 @@ async function monthlyLeaderboard(req, res) {
     if (leaderboardCache.monthly && now < leaderboardCache.monthlyExpiry) {
       const puzzleDay = parseInt(req.query.puzzle_day, 10);
       if (puzzleDay) {
-        const hmSet = await getHmEmailSet(puzzleDay);
+        const hmSet = await getHmEmailSet();
         return res.json({ success: true, data: tagHardMode(leaderboardCache.monthly, hmSet) });
       }
       return res.json({ success: true, data: leaderboardCache.monthly });
@@ -454,7 +455,7 @@ async function monthlyLeaderboard(req, res) {
     leaderboardCache.monthlyExpiry = now + LEADERBOARD_TTL;
     const puzzleDay = parseInt(req.query.puzzle_day, 10);
     if (puzzleDay) {
-      const hmSet = await getHmEmailSet(puzzleDay);
+      const hmSet = await getHmEmailSet();
       return res.json({ success: true, data: tagHardMode(board, hmSet) });
     }
     res.json({ success: true, data: board });
@@ -467,13 +468,17 @@ async function monthlyLeaderboard(req, res) {
 
 const HM_EMAILS_TTL = 3 * 60 * 1000;
 
-async function getHmEmailSet(puzzleDay) {
+async function getHmEmailSet() {
+  const todayHardPuzzle = await IplHardmodeDailyPuzzleModel.findToday()
+    || await IplHardmodeDailyPuzzleModel.findLatest();
+  if (!todayHardPuzzle) return new Set();
+  const hmDay = todayHardPuzzle.day;
   const now = Date.now();
-  const cached = leaderboardCache.hmEmails.get(puzzleDay);
+  const cached = leaderboardCache.hmEmails.get(hmDay);
   if (cached && now < cached.expiry) return cached.set;
-  const emails = await UserHardModeResultModel.getTodayHardModeEmails(puzzleDay);
+  const emails = await UserHardModeResultModel.getTodayHardModeEmails(hmDay);
   const set = new Set(emails.map((e) => maskEmail(e)));
-  leaderboardCache.hmEmails.set(puzzleDay, { set, expiry: now + HM_EMAILS_TTL });
+  leaderboardCache.hmEmails.set(hmDay, { set, expiry: now + HM_EMAILS_TTL });
   if (leaderboardCache.hmEmails.size > 3) {
     const oldest = leaderboardCache.hmEmails.keys().next().value;
     leaderboardCache.hmEmails.delete(oldest);
