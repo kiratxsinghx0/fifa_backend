@@ -126,7 +126,7 @@ async function register(req, res) {
 
 async function login(req, res) {
   try {
-    const { email, password } = req.body;
+    const { email, password, gameResult } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ success: false, message: "Email and password are required" });
@@ -156,12 +156,84 @@ async function login(req, res) {
       } catch { /* non-critical */ }
     }
 
+    let godmodeActivatedAt = user.godmode_activated_at ?? null;
+
+    if (gameResult && typeof gameResult === "object") {
+      try {
+        const isHardMode = gameResult.hard_mode === true || gameResult.hard_mode === 1;
+        const day = Number(gameResult.puzzle_day);
+        const guesses = Number(gameResult.num_guesses);
+        const wonBool = gameResult.won === true || gameResult.won === 1;
+        const timeSec = gameResult.time_seconds != null ? Number(gameResult.time_seconds) : null;
+        const hints = Number(gameResult.hints_used ?? 0);
+
+        if (isHardMode) {
+          const latestHardPuzzle = await IplHardmodeDailyPuzzleModel.findLatest();
+          const isValid =
+            Number.isInteger(day) && day >= 1 &&
+            Number.isInteger(guesses) && guesses >= 1 && guesses <= 6 &&
+            latestHardPuzzle && day <= latestHardPuzzle.day;
+
+          if (isValid) {
+            const existing = await UserHardModeResultModel.findByUserAndDay(user.id, day);
+            if (!existing) {
+              await UserHardModeResultModel.create({
+                user_id: user.id,
+                puzzle_day: day,
+                won: wonBool,
+                num_guesses: guesses,
+                time_seconds: timeSec,
+              });
+            }
+
+            if (wonBool) {
+              godmodeActivatedAt = Date.now();
+              await UserModel.setGodmodeActivatedAt(user.id, godmodeActivatedAt);
+              invalidateGodmodeEmailCache();
+              spliceHardTodayCache(day, email, {
+                num_guesses: existing ? existing.num_guesses : guesses,
+                time_seconds: existing ? (existing.time_seconds ?? 0) : (timeSec ?? 0),
+              });
+            }
+          }
+        } else {
+          const latestPuzzle = await IplDailyPuzzleModel.findLatest();
+          const isValid =
+            Number.isInteger(day) && day >= 1 &&
+            Number.isInteger(guesses) && guesses >= 1 && guesses <= 6 &&
+            latestPuzzle && day <= latestPuzzle.day;
+
+          if (isValid) {
+            const existing = await UserGameResultModel.findByUserAndDay(user.id, day);
+            if (!existing) {
+              await UserGameResultModel.create({
+                user_id: user.id,
+                puzzle_day: day,
+                won: wonBool,
+                num_guesses: guesses,
+                time_seconds: timeSec,
+                hints_used: hints,
+              });
+            }
+
+            if (wonBool) {
+              spliceTodayCache(day, email, {
+                num_guesses: existing ? existing.num_guesses : guesses,
+                time_seconds: existing ? (existing.time_seconds ?? 0) : (timeSec ?? 0),
+                hints_used: existing ? (existing.hints_used ?? 0) : hints,
+              });
+            }
+          }
+        }
+      } catch { /* non-critical */ }
+    }
+
     res.json({
       success: true,
       data: {
         token,
         user: { id: user.id, email: user.email },
-        godmode_activated_at: user.godmode_activated_at ?? null,
+        godmode_activated_at: godmodeActivatedAt,
         hard_mode_pref: !!user.hard_mode_pref,
       },
     });
