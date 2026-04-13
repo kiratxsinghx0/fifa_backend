@@ -34,29 +34,29 @@ const STATIC_TODAY = [
 ];
 
 const STATIC_WEEKLY = [
-  { email: "manish.tiwari",    games_won: 6, points: 1420 },
-  { email: "deepak.verma91",   games_won: 5, points: 1180 },
-  { email: "ananya.das",       games_won: 5, points: 1090 },
-  { email: "sanjay.rao",       games_won: 4, points: 980  },
-  { email: "nikhil.pandey07",  games_won: 4, points: 910  },
-  { email: "harsh.chauhan",    games_won: 3, points: 760  },
-  { email: "ravi.kumar55",     games_won: 3, points: 720  },
-  { email: "ajay.saxena",      games_won: 3, points: 680  },
-  { email: "pooja.nair85",     games_won: 2, points: 520  },
-  { email: "tushar.bhatt",     games_won: 2, points: 460  },
+  { email: "manish.tiwari",    games_won: 1, points: 420 },
+  { email: "deepak.verma91",   games_won: 1, points: 480 },
+  { email: "ananya.das",       games_won: 1, points: 540 },
+  { email: "sanjay.rao",       games_won: 1, points: 600  },
+  { email: "nikhil.pandey07",  games_won: 1, points: 660  },
+  { email: "harsh.chauhan",    games_won: 1, points: 720  },
+  { email: "ravi.kumar55",     games_won: 1, points: 780  },
+  { email: "ajay.saxena",      games_won: 1, points: 840  },
+  { email: "pooja.nair85",     games_won: 1, points: 900  },
+  { email: "tushar.bhatt",     games_won: 1, points: 960  },
 ];
 
 const STATIC_MONTHLY = [
-  { email: "gaurav.mishra",    games_won: 24, points: 5640 },
-  { email: "mohit.aggarwal",   games_won: 22, points: 5180 },
-  { email: "naveen.reddy01",   games_won: 20, points: 4720 },
-  { email: "prateek.singh",    games_won: 19, points: 4390 },
-  { email: "varun.khanna",     games_won: 18, points: 4100 },
-  { email: "shruti.menon",     games_won: 17, points: 3850 },
-  { email: "ashish.dubey77",   games_won: 16, points: 3620 },
-  { email: "rajesh.nambiar",   games_won: 15, points: 3380 },
-  { email: "kunal.dutta",      games_won: 14, points: 3100 },
-  { email: "vivek.choudhary",  games_won: 13, points: 2840 },
+  { email: "gaurav.mishra",    games_won: 1, points: 420  },
+  { email: "mohit.aggarwal",   games_won: 1, points: 480  },
+  { email: "naveen.reddy01",   games_won: 1, points: 540  },
+  { email: "prateek.singh",    games_won: 1, points: 600  },
+  { email: "varun.khanna",     games_won: 1, points: 660  },
+  { email: "shruti.menon",     games_won: 1, points: 720  },
+  { email: "ashish.dubey77",   games_won: 1, points: 780  },
+  { email: "rajesh.nambiar",   games_won: 1, points: 840  },
+  { email: "kunal.dutta",      games_won: 1, points: 900  },
+  { email: "vivek.choudhary",  games_won: 1, points: 960  },
 ];
 
 const LEADERBOARD_PAD_TARGET = 10;
