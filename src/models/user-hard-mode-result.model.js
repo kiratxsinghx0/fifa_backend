@@ -124,7 +124,7 @@ async function getWeeklyLeaderboard() {
        ${HARD_POINTS_EXPR} AS points
      FROM ipl_hardmode_user_results uhr
      JOIN users u ON u.id = uhr.user_id
-     WHERE uhr.played_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+     WHERE uhr.played_at >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
      GROUP BY uhr.user_id, u.email
      HAVING games_won >= 1
      ORDER BY points DESC, games_won DESC
@@ -142,7 +142,7 @@ async function getMonthlyLeaderboard() {
        ${HARD_POINTS_EXPR} AS points
      FROM ipl_hardmode_user_results uhr
      JOIN users u ON u.id = uhr.user_id
-     WHERE uhr.played_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+     WHERE uhr.played_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
      GROUP BY uhr.user_id, u.email
      HAVING games_won >= 1
      ORDER BY points DESC, games_won DESC

@@ -126,7 +126,7 @@ async function getWeeklyLeaderboard() {
        ${POINTS_EXPR} AS points
      FROM user_game_results ugr
      JOIN users u ON u.id = ugr.user_id
-     WHERE ugr.played_at >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+     WHERE ugr.played_at >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
      GROUP BY ugr.user_id, u.email
      HAVING games_won >= 1
      ORDER BY points DESC, games_won DESC
@@ -144,7 +144,7 @@ async function getMonthlyLeaderboard() {
        ${POINTS_EXPR} AS points
      FROM user_game_results ugr
      JOIN users u ON u.id = ugr.user_id
-     WHERE ugr.played_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+     WHERE ugr.played_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
      GROUP BY ugr.user_id, u.email
      HAVING games_won >= 1
      ORDER BY points DESC, games_won DESC
