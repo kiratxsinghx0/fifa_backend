@@ -33,18 +33,19 @@ function formatStats(row) {
       distribution: [0, 0, 0, 0, 0, 0],
     };
   }
-  const totalWon = row.total_won || 1;
+  const totalWon = row.total_won;
+  const pct = (v) => totalWon > 0 ? Math.round((v / totalWon) * 100) : 0;
   return {
     puzzleDay: row.puzzle_day,
     totalPlayed: row.total_played,
-    totalWon: row.total_won,
+    totalWon,
     distribution: [
-      Math.round((row.guess_1 / totalWon) * 100),
-      Math.round((row.guess_2 / totalWon) * 100),
-      Math.round((row.guess_3 / totalWon) * 100),
-      Math.round((row.guess_4 / totalWon) * 100),
-      Math.round((row.guess_5 / totalWon) * 100),
-      Math.round((row.guess_6 / totalWon) * 100),
+      pct(row.guess_1),
+      pct(row.guess_2),
+      pct(row.guess_3),
+      pct(row.guess_4),
+      pct(row.guess_5),
+      pct(row.guess_6),
     ],
   };
 }
@@ -83,6 +84,7 @@ async function incrementAnonymous(req, res) {
 
     const day = Number(puzzle_day);
     const guesses = Number(num_guesses);
+    const wonBool = won === true || won === 1;
 
     const ip = req.ip || req.connection?.remoteAddress || "unknown";
     if (isRateLimited(ip)) {
@@ -98,7 +100,7 @@ async function incrementAnonymous(req, res) {
       return res.status(400).json({ success: false, message: "Invalid guess count" });
     }
 
-    await HardmodeLivePuzzleStatsModel.increment(day, won, guesses);
+    await HardmodeLivePuzzleStatsModel.increment(day, wonBool, guesses);
     res.json({ success: true });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

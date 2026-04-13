@@ -58,6 +58,15 @@ async function getStatsByUser(userId) {
 
 async function bulkCreate(userId, results) {
   if (!results || results.length === 0) return;
+
+  const days = results.map((r) => r.puzzle_day);
+  const dayPlaceholders = days.map(() => "?").join(",");
+  const [puzzles] = await pool.execute(
+    `SELECT day, set_at FROM ipl_daily_puzzles WHERE day IN (${dayPlaceholders})`,
+    days
+  );
+  const dateMap = new Map(puzzles.map((p) => [p.day, p.set_at]));
+
   const values = results.map((r) => [
     userId,
     r.puzzle_day,
@@ -65,11 +74,12 @@ async function bulkCreate(userId, results) {
     r.num_guesses,
     r.time_seconds ?? null,
     r.hints_used ?? 0,
+    dateMap.get(r.puzzle_day) ?? new Date(),
   ]);
-  const placeholders = values.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
+  const placeholders = values.map(() => "(?, ?, ?, ?, ?, ?, ?)").join(", ");
   const flat = values.flat();
   await pool.execute(
-    `INSERT INTO user_game_results (user_id, puzzle_day, won, num_guesses, time_seconds, hints_used)
+    `INSERT INTO user_game_results (user_id, puzzle_day, won, num_guesses, time_seconds, hints_used, played_at)
      VALUES ${placeholders}
      ON DUPLICATE KEY UPDATE
        won = VALUES(won), num_guesses = VALUES(num_guesses),
@@ -126,7 +136,8 @@ async function getWeeklyLeaderboard() {
        ${POINTS_EXPR} AS points
      FROM user_game_results ugr
      JOIN users u ON u.id = ugr.user_id
-     WHERE ugr.played_at >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+     JOIN ipl_daily_puzzles p ON p.day = ugr.puzzle_day
+     WHERE p.set_at >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
      GROUP BY ugr.user_id, u.email
      HAVING games_won >= 1
      ORDER BY points DESC, games_won DESC
@@ -144,7 +155,8 @@ async function getMonthlyLeaderboard() {
        ${POINTS_EXPR} AS points
      FROM user_game_results ugr
      JOIN users u ON u.id = ugr.user_id
-     WHERE ugr.played_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+     JOIN ipl_daily_puzzles p ON p.day = ugr.puzzle_day
+     WHERE p.set_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
      GROUP BY ugr.user_id, u.email
      HAVING games_won >= 1
      ORDER BY points DESC, games_won DESC
