@@ -1,6 +1,7 @@
 const UserGameResultModel = require("../models/user-game-result.model");
 const UserHardModeResultModel = require("../models/user-hard-mode-result.model");
 const UserModel = require("../models/user.model");
+const UserAchievementsModel = require("../models/user-achievements.model");
 const GameProgressModel = require("../models/ipl-game-progress.model");
 const HardModeGameProgressModel = require("../models/ipl-hardmode-game-progress.model");
 const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
@@ -17,7 +18,6 @@ const leaderboardCache = {
   weeklyHard: null, weeklyHardExpiry: 0,
   monthlyHard: null, monthlyHardExpiry: 0,
   todayHard: new Map(),
-  hmEmails: new Map(),
 };
 
 const STATIC_TODAY = [
@@ -122,29 +122,60 @@ function computeStats(rows) {
   return { gamesPlayed, gamesWon, currentStreak, maxStreak, distribution };
 }
 
-function mergeWithBaseline(stats, user) {
-  const bp = user.baseline_played || 0;
-  const bw = user.baseline_won || 0;
-  const bms = user.baseline_max_streak || 0;
+/**
+ * Recompute and persist achievements for a user.
+ * Pass mode = "normal" | "hard" | "both" to control which streaks are refreshed.
+ */
+async function refreshAchievements(userId, mode) {
+  try {
+    const existing = await UserAchievementsModel.findByUserId(userId);
+    if (mode === "normal" || mode === "both") {
+      const rows = await UserGameResultModel.getStatsByUser(userId);
+      const stats = computeStats(rows);
+      await UserAchievementsModel.updateNormalStreaks(
+        userId,
+        stats.currentStreak,
+        Math.max(stats.maxStreak, existing?.normal_max_streak || 0),
+      );
+    }
+    if (mode === "hard" || mode === "both") {
+      const rows = await UserHardModeResultModel.getStatsByUser(userId);
+      const stats = computeStats(rows);
+      await UserAchievementsModel.updateHardStreaks(
+        userId,
+        stats.currentStreak,
+        Math.max(stats.maxStreak, existing?.hard_max_streak || 0),
+      );
+    }
+  } catch {
+    /* non-critical */
+  }
+}
 
+function mergeWithPerModeBaseline(stats, user, mode) {
+  const bp = mode === "hard" ? (user.baseline_played_hard || 0) : (user.baseline_played_normal || 0);
+  const bw = mode === "hard" ? (user.baseline_won_hard || 0) : (user.baseline_won_normal || 0);
   if (bp <= stats.gamesPlayed) return stats;
-
   return {
     ...stats,
     gamesPlayed: Math.max(stats.gamesPlayed, bp),
     gamesWon: Math.max(stats.gamesWon, bw),
-    maxStreak: Math.max(stats.maxStreak, bms),
   };
 }
 
 async function getMyStats(req, res) {
   try {
-    const [rows, user] = await Promise.all([
+    const [rows, user, achievements] = await Promise.all([
       UserGameResultModel.getStatsByUser(req.userId),
       UserModel.findById(req.userId),
+      UserAchievementsModel.findByUserId(req.userId),
     ]);
     const stats = computeStats(rows);
-    const merged = user ? mergeWithBaseline(stats, user) : stats;
+    const merged = user ? mergeWithPerModeBaseline(stats, user, "normal") : stats;
+    if (achievements) {
+      merged.currentStreak = Math.max(merged.currentStreak, achievements.normal_current_streak || 0);
+      merged.maxStreak = Math.max(merged.maxStreak, achievements.normal_max_streak || 0);
+    }
     res.json({ success: true, data: merged });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -218,7 +249,7 @@ async function saveResult(req, res) {
       UserModel.findById(req.userId),
     ]);
     const stats = computeStats(rows);
-    const merged = user ? mergeWithBaseline(stats, user) : stats;
+    const merged = user ? mergeWithPerModeBaseline(stats, user, "normal") : stats;
 
     let todayRank = 0;
     if (wonBool && user) {
@@ -228,6 +259,8 @@ async function saveResult(req, res) {
         hints_used: hints,
       });
     }
+
+    refreshAchievements(req.userId, "normal").catch(() => {});
 
     res.status(201).json({ success: true, data: { ...merged, todayRank } });
   } catch (err) {
@@ -275,7 +308,25 @@ async function syncResults(req, res) {
       UserModel.findById(req.userId),
     ]);
     const stats = computeStats(rows);
-    const merged = user ? mergeWithBaseline(stats, user) : stats;
+    const merged = user ? mergeWithPerModeBaseline(stats, user, "normal") : stats;
+
+    if (user) {
+      const todayPuzzle = await IplDailyPuzzleModel.findToday() || await IplDailyPuzzleModel.findLatest();
+      if (todayPuzzle) {
+        for (const v of valid) {
+          if (v.won && v.puzzle_day === todayPuzzle.day) {
+            spliceTodayCache(v.puzzle_day, user.email, {
+              num_guesses: v.num_guesses,
+              time_seconds: v.time_seconds ?? 0,
+              hints_used: v.hints_used ?? 0,
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    refreshAchievements(req.userId, "normal").catch(() => {});
 
     res.json({ success: true, data: merged, synced: valid.length });
   } catch (err) {
@@ -349,7 +400,7 @@ async function todayLeaderboard(req, res) {
     const now = Date.now();
     const cached = leaderboardCache.today.get(puzzleDay);
     if (cached && now < cached.expiry) {
-      const hmSet = await getHmEmailSet();
+      const hmSet = await getGodmodeEmailSet();
       return res.json({ success: true, data: tagHardMode(stripFillerFlag(cached.data), hmSet) });
     }
     const rows = await UserGameResultModel.getTodayLeaderboard(puzzleDay);
@@ -366,7 +417,7 @@ async function todayLeaderboard(req, res) {
       const oldest = leaderboardCache.today.keys().next().value;
       leaderboardCache.today.delete(oldest);
     }
-    const hmSet = await getHmEmailSet();
+    const hmSet = await getGodmodeEmailSet();
     res.json({ success: true, data: tagHardMode(stripFillerFlag(board), hmSet) });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -392,7 +443,7 @@ async function allTimeLeaderboard(req, res) {
     if (leaderboardCache.allTime && now < leaderboardCache.allTimeExpiry) {
       const puzzleDay = parseInt(req.query.puzzle_day, 10);
       if (puzzleDay) {
-        const hmSet = await getHmEmailSet();
+        const hmSet = await getGodmodeEmailSet();
         return res.json({ success: true, data: tagHardMode(leaderboardCache.allTime, hmSet) });
       }
       return res.json({ success: true, data: leaderboardCache.allTime });
@@ -403,7 +454,7 @@ async function allTimeLeaderboard(req, res) {
     leaderboardCache.allTimeExpiry = now + LEADERBOARD_TTL;
     const puzzleDay = parseInt(req.query.puzzle_day, 10);
     if (puzzleDay) {
-      const hmSet = await getHmEmailSet();
+      const hmSet = await getGodmodeEmailSet();
       return res.json({ success: true, data: tagHardMode(board, hmSet) });
     }
     res.json({ success: true, data: board });
@@ -418,7 +469,7 @@ async function weeklyLeaderboard(req, res) {
     if (leaderboardCache.weekly && now < leaderboardCache.weeklyExpiry) {
       const puzzleDay = parseInt(req.query.puzzle_day, 10);
       if (puzzleDay) {
-        const hmSet = await getHmEmailSet();
+        const hmSet = await getGodmodeEmailSet();
         return res.json({ success: true, data: tagHardMode(leaderboardCache.weekly, hmSet) });
       }
       return res.json({ success: true, data: leaderboardCache.weekly });
@@ -429,7 +480,7 @@ async function weeklyLeaderboard(req, res) {
     leaderboardCache.weeklyExpiry = now + LEADERBOARD_TTL;
     const puzzleDay = parseInt(req.query.puzzle_day, 10);
     if (puzzleDay) {
-      const hmSet = await getHmEmailSet();
+      const hmSet = await getGodmodeEmailSet();
       return res.json({ success: true, data: tagHardMode(board, hmSet) });
     }
     res.json({ success: true, data: board });
@@ -444,7 +495,7 @@ async function monthlyLeaderboard(req, res) {
     if (leaderboardCache.monthly && now < leaderboardCache.monthlyExpiry) {
       const puzzleDay = parseInt(req.query.puzzle_day, 10);
       if (puzzleDay) {
-        const hmSet = await getHmEmailSet();
+        const hmSet = await getGodmodeEmailSet();
         return res.json({ success: true, data: tagHardMode(leaderboardCache.monthly, hmSet) });
       }
       return res.json({ success: true, data: leaderboardCache.monthly });
@@ -455,7 +506,7 @@ async function monthlyLeaderboard(req, res) {
     leaderboardCache.monthlyExpiry = now + LEADERBOARD_TTL;
     const puzzleDay = parseInt(req.query.puzzle_day, 10);
     if (puzzleDay) {
-      const hmSet = await getHmEmailSet();
+      const hmSet = await getGodmodeEmailSet();
       return res.json({ success: true, data: tagHardMode(board, hmSet) });
     }
     res.json({ success: true, data: board });
@@ -464,32 +515,28 @@ async function monthlyLeaderboard(req, res) {
   }
 }
 
-/* ── Hard Mode helpers ── */
+/* ── Godmode badge helpers ── */
 
-const HM_EMAILS_TTL = 3 * 60 * 1000;
+const GM_EMAILS_TTL = 3 * 60 * 1000;
+let gmEmailsCache = { set: null, expiry: 0 };
 
-async function getHmEmailSet() {
-  const todayHardPuzzle = await IplHardmodeDailyPuzzleModel.findToday()
-    || await IplHardmodeDailyPuzzleModel.findLatest();
-  if (!todayHardPuzzle) return new Set();
-  const hmDay = todayHardPuzzle.day;
+async function getGodmodeEmailSet() {
   const now = Date.now();
-  const cached = leaderboardCache.hmEmails.get(hmDay);
-  if (cached && now < cached.expiry) return cached.set;
-  const emails = await UserHardModeResultModel.getTodayHardModeEmails(hmDay);
+  if (gmEmailsCache.set && now < gmEmailsCache.expiry) return gmEmailsCache.set;
+  const emails = await UserModel.getActiveGodmodeEmails();
   const set = new Set(emails.map((e) => maskEmail(e)));
-  leaderboardCache.hmEmails.set(hmDay, { set, expiry: now + HM_EMAILS_TTL });
-  if (leaderboardCache.hmEmails.size > 3) {
-    const oldest = leaderboardCache.hmEmails.keys().next().value;
-    leaderboardCache.hmEmails.delete(oldest);
-  }
+  gmEmailsCache = { set, expiry: now + GM_EMAILS_TTL };
   return set;
 }
 
-function tagHardMode(board, hmSet) {
+function invalidateGodmodeEmailCache() {
+  gmEmailsCache = { set: null, expiry: 0 };
+}
+
+function tagHardMode(board, gmSet) {
   return board.map((row) => ({
     ...row,
-    is_hard_mode_today: hmSet.has(row.email),
+    is_hard_mode_today: gmSet.has(row.email),
   }));
 }
 
@@ -550,7 +597,6 @@ async function saveHardModeResult(req, res) {
     });
 
     HardModeGameProgressModel.markCompleted(req.userId, day).catch(() => {});
-    leaderboardCache.hmEmails.delete(day);
 
     let todayRank = 0;
     if (wonBool) {
@@ -562,6 +608,8 @@ async function saveHardModeResult(req, res) {
         });
       }
     }
+
+    refreshAchievements(req.userId, "hard").catch(() => {});
 
     res.status(201).json({ success: true, data: { todayRank } });
   } catch (err) {
@@ -799,6 +847,8 @@ async function activateGodmode(req, res) {
 
     const ts = Date.now();
     await UserModel.setGodmodeActivatedAt(req.userId, ts);
+    UserAchievementsModel.incrementGodmodeActivations(req.userId).catch(() => {});
+    invalidateGodmodeEmailCache();
     res.json({ success: true, data: { godmode_activated_at: ts } });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -837,9 +887,18 @@ async function updatePreferences(req, res) {
 
 async function getMyHardModeStats(req, res) {
   try {
-    const rows = await UserHardModeResultModel.getStatsByUser(req.userId);
+    const [rows, user, achievements] = await Promise.all([
+      UserHardModeResultModel.getStatsByUser(req.userId),
+      UserModel.findById(req.userId),
+      UserAchievementsModel.findByUserId(req.userId),
+    ]);
     const stats = computeStats(rows);
-    res.json({ success: true, data: stats });
+    const merged = user ? mergeWithPerModeBaseline(stats, user, "hard") : stats;
+    if (achievements) {
+      merged.currentStreak = Math.max(merged.currentStreak, achievements.hard_current_streak || 0);
+      merged.maxStreak = Math.max(merged.maxStreak, achievements.hard_max_streak || 0);
+    }
+    res.json({ success: true, data: merged });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
   }
@@ -876,8 +935,28 @@ async function syncHardModeResults(req, res) {
       await UserHardModeResultModel.bulkCreate(req.userId, valid);
     }
 
-    const rows = await UserHardModeResultModel.getStatsByUser(req.userId);
+    const [rows, user] = await Promise.all([
+      UserHardModeResultModel.getStatsByUser(req.userId),
+      UserModel.findById(req.userId),
+    ]);
     const stats = computeStats(rows);
+
+    if (user) {
+      const todayHardPuzzle = await IplHardmodeDailyPuzzleModel.findToday() || await IplHardmodeDailyPuzzleModel.findLatest();
+      if (todayHardPuzzle) {
+        for (const v of valid) {
+          if (v.won && v.puzzle_day === todayHardPuzzle.day) {
+            spliceHardTodayCache(v.puzzle_day, user.email, {
+              num_guesses: v.num_guesses,
+              time_seconds: v.time_seconds ?? 0,
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    refreshAchievements(req.userId, "hard").catch(() => {});
 
     res.json({ success: true, data: stats, synced: valid.length });
   } catch (err) {
@@ -889,10 +968,11 @@ module.exports = {
   getMyStats, saveResult, syncResults,
   todayLeaderboard, allTimeLeaderboard,
   weeklyLeaderboard, monthlyLeaderboard,
-  spliceTodayCache,
+  spliceTodayCache, spliceHardTodayCache, invalidateGodmodeEmailCache,
   saveHardModeResult, getMyHardModeStats, syncHardModeResults,
   todayHardModeLeaderboard, allTimeHardModeLeaderboard,
   weeklyHardModeLeaderboard, monthlyHardModeLeaderboard,
   saveProgress, getProgress,
   activateGodmode, getPreferences, updatePreferences,
+  refreshAchievements,
 };

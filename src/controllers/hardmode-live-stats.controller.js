@@ -107,4 +107,29 @@ async function incrementAnonymous(req, res) {
   }
 }
 
-module.exports = { getByDay, getLatest, incrementAnonymous };
+async function incrementGameStart(req, res) {
+  try {
+    const { puzzle_day } = req.body;
+    if (puzzle_day == null) {
+      return res.status(400).json({ success: false, message: "puzzle_day is required" });
+    }
+
+    const day = Number(puzzle_day);
+    const ip = req.ip || req.connection?.remoteAddress || "unknown";
+    if (isRateLimited(ip)) {
+      return res.status(429).json({ success: false, message: "Too many requests" });
+    }
+
+    const latest = await IplHardmodeDailyPuzzleModel.findLatest();
+    if (!latest || latest.day !== day) {
+      return res.status(400).json({ success: false, message: "Invalid puzzle day" });
+    }
+
+    await HardmodeLivePuzzleStatsModel.incrementGameStart(day);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+module.exports = { getByDay, getLatest, incrementAnonymous, incrementGameStart };

@@ -17,6 +17,9 @@ const CREATE_TABLE = `
 
 async function createTable() {
   await pool.execute(CREATE_TABLE);
+  try {
+    await pool.execute("ALTER TABLE live_puzzle_stats ADD COLUMN game_starts INT NOT NULL DEFAULT 0");
+  } catch { /* column already exists */ }
 }
 
 async function findByDay(puzzleDay) {
@@ -65,4 +68,13 @@ async function findLatestDay() {
   return rows[0] || null;
 }
 
-module.exports = { createTable, findByDay, increment, findLatestDay };
+async function incrementGameStart(puzzleDay) {
+  await pool.execute(
+    `INSERT INTO live_puzzle_stats (puzzle_day, game_starts)
+     VALUES (?, 1)
+     ON DUPLICATE KEY UPDATE game_starts = game_starts + 1`,
+    [puzzleDay]
+  );
+}
+
+module.exports = { createTable, findByDay, increment, incrementGameStart, findLatestDay };

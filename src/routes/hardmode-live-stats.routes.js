@@ -4,5 +4,6 @@ const hardmodeLiveStatsController = require("../controllers/hardmode-live-stats.
 router.get("/today", hardmodeLiveStatsController.getLatest);
 router.get("/day/:day", hardmodeLiveStatsController.getByDay);
 router.post("/increment", hardmodeLiveStatsController.incrementAnonymous);
+router.post("/game-start", hardmodeLiveStatsController.incrementGameStart);
 
 module.exports = router;

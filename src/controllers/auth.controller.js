@@ -5,7 +5,7 @@ const UserHardModeResultModel = require("../models/user-hard-mode-result.model")
 const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
 const IplHardmodeDailyPuzzleModel = require("../models/ipl-hardmode-daily-puzzle.model");
 const { signToken } = require("../middleware/auth");
-const { spliceTodayCache } = require("./user-stats.controller");
+const { spliceTodayCache, spliceHardTodayCache, invalidateGodmodeEmailCache } = require("./user-stats.controller");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SALT_ROUNDS = 10;
@@ -60,6 +60,11 @@ async function register(req, res) {
             if (wonBool) {
               godmodeActivatedAt = Date.now();
               await UserModel.setGodmodeActivatedAt(user.id, godmodeActivatedAt);
+              invalidateGodmodeEmailCache();
+              spliceHardTodayCache(day, email, {
+                num_guesses: guesses,
+                time_seconds: timeSec ?? 0,
+              });
             }
           }
         } else {
@@ -96,10 +101,11 @@ async function register(req, res) {
     if (req.body.baselineStats) {
       try {
         const b = req.body.baselineStats;
-        await UserModel.setBaseline(user.id, {
-          played: b.gamesPlayed || 0,
-          won: b.gamesWon || 0,
-          maxStreak: b.maxStreak || 0,
+        await UserModel.setBaselinePerMode(user.id, {
+          playedNormal: b.gamesPlayedNormal || b.gamesPlayed || 0,
+          wonNormal: b.gamesWonNormal || b.gamesWon || 0,
+          playedHard: b.gamesPlayedHard || 0,
+          wonHard: b.gamesWonHard || 0,
         });
       } catch { /* non-critical */ }
     }
@@ -141,10 +147,11 @@ async function login(req, res) {
     if (req.body.baselineStats) {
       try {
         const b = req.body.baselineStats;
-        await UserModel.mergeBaseline(user.id, {
-          played: b.gamesPlayed || 0,
-          won: b.gamesWon || 0,
-          maxStreak: b.maxStreak || 0,
+        await UserModel.mergeBaselinePerMode(user.id, {
+          playedNormal: b.gamesPlayedNormal || b.gamesPlayed || 0,
+          wonNormal: b.gamesWonNormal || b.gamesWon || 0,
+          playedHard: b.gamesPlayedHard || 0,
+          wonHard: b.gamesWonHard || 0,
         });
       } catch { /* non-critical */ }
     }

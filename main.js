@@ -28,6 +28,7 @@ const LivePuzzleStatsModel = require("./src/models/live-puzzle-stats.model");
 const HardmodeLivePuzzleStatsModel = require("./src/models/hardmode-live-puzzle-stats.model");
 const GameProgressModel = require("./src/models/ipl-game-progress.model");
 const HardModeGameProgressModel = require("./src/models/ipl-hardmode-game-progress.model");
+const UserAchievementsModel = require("./src/models/user-achievements.model");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -83,6 +84,7 @@ async function bootstrap() {
   await HardmodeLivePuzzleStatsModel.createTable();
   await GameProgressModel.createTable();
   await HardModeGameProgressModel.createTable();
+  await UserAchievementsModel.createTable();
   console.log("Database tables ensured");
 
   server = app.listen(PORT, () => {

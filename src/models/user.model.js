@@ -24,6 +24,10 @@ async function createTable() {
   try { await pool.execute(ENSURE_BASELINE_COLS); } catch { /* columns already exist */ }
   try { await pool.execute("ALTER TABLE users ADD COLUMN godmode_activated_at BIGINT DEFAULT NULL"); } catch { /* already exists */ }
   try { await pool.execute("ALTER TABLE users ADD COLUMN hard_mode_pref TINYINT(1) NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+  try { await pool.execute("ALTER TABLE users ADD COLUMN baseline_played_normal INT NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+  try { await pool.execute("ALTER TABLE users ADD COLUMN baseline_won_normal INT NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+  try { await pool.execute("ALTER TABLE users ADD COLUMN baseline_played_hard INT NOT NULL DEFAULT 0"); } catch { /* already exists */ }
+  try { await pool.execute("ALTER TABLE users ADD COLUMN baseline_won_hard INT NOT NULL DEFAULT 0"); } catch { /* already exists */ }
 }
 
 async function findByEmail(email) {
@@ -65,6 +69,39 @@ async function mergeBaseline(userId, { played, won, maxStreak }) {
   );
 }
 
+async function setBaselinePerMode(userId, { playedNormal, wonNormal, playedHard, wonHard }) {
+  await pool.execute(
+    `UPDATE users SET
+       baseline_played_normal = ?, baseline_won_normal = ?,
+       baseline_played_hard = ?, baseline_won_hard = ?
+     WHERE id = ?`,
+    [playedNormal || 0, wonNormal || 0, playedHard || 0, wonHard || 0, userId]
+  );
+}
+
+async function mergeBaselinePerMode(userId, { playedNormal, wonNormal, playedHard, wonHard }) {
+  await pool.execute(
+    `UPDATE users SET
+       baseline_played_normal = GREATEST(baseline_played_normal, ?),
+       baseline_won_normal    = GREATEST(baseline_won_normal, ?),
+       baseline_played_hard   = GREATEST(baseline_played_hard, ?),
+       baseline_won_hard      = GREATEST(baseline_won_hard, ?)
+     WHERE id = ?`,
+    [playedNormal || 0, wonNormal || 0, playedHard || 0, wonHard || 0, userId]
+  );
+}
+
+const GODMODE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+async function getActiveGodmodeEmails() {
+  const cutoff = Date.now() - GODMODE_DURATION_MS;
+  const [rows] = await pool.execute(
+    "SELECT email FROM users WHERE godmode_activated_at IS NOT NULL AND godmode_activated_at > ?",
+    [cutoff]
+  );
+  return rows.map((r) => r.email);
+}
+
 async function setGodmodeActivatedAt(userId, timestamp) {
   await pool.execute(
     "UPDATE users SET godmode_activated_at = ? WHERE id = ?",
@@ -81,5 +118,7 @@ async function setHardModePref(userId, enabled) {
 
 module.exports = {
   createTable, findByEmail, findById, create, setBaseline, mergeBaseline,
+  setBaselinePerMode, mergeBaselinePerMode,
   setGodmodeActivatedAt, setHardModePref,
+  getActiveGodmodeEmails,
 };
