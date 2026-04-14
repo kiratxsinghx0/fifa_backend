@@ -58,9 +58,11 @@ async function register(req, res) {
             });
 
             if (wonBool) {
-              godmodeActivatedAt = Date.now();
-              await UserModel.setGodmodeActivatedAt(user.id, godmodeActivatedAt);
-              invalidateGodmodeEmailCache();
+              if (day === latestHardPuzzle.day) {
+                godmodeActivatedAt = Date.now();
+                await UserModel.setGodmodeActivatedAt(user.id, godmodeActivatedAt);
+                invalidateGodmodeEmailCache();
+              }
               spliceHardTodayCache(day, email, {
                 num_guesses: guesses,
                 time_seconds: timeSec ?? 0,
@@ -187,9 +189,11 @@ async function login(req, res) {
             }
 
             if (wonBool) {
-              godmodeActivatedAt = Date.now();
-              await UserModel.setGodmodeActivatedAt(user.id, godmodeActivatedAt);
-              invalidateGodmodeEmailCache();
+              if (day === latestHardPuzzle.day) {
+                godmodeActivatedAt = Date.now();
+                await UserModel.setGodmodeActivatedAt(user.id, godmodeActivatedAt);
+                invalidateGodmodeEmailCache();
+              }
               spliceHardTodayCache(day, email, {
                 num_guesses: existing ? existing.num_guesses : guesses,
                 time_seconds: existing ? (existing.time_seconds ?? 0) : (timeSec ?? 0),
