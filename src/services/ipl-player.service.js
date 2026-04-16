@@ -145,6 +145,7 @@ function formatPuzzleResponse(puzzle) {
     fullName: puzzle.full_name || null,
     isShortened: Boolean(puzzle.is_shortened),
     hints,
+    funFact: puzzle.fun_fact || null,
     setAt: puzzle.set_at,
   };
 }
@@ -213,6 +214,7 @@ async function autoSetDailyPuzzle() {
     full_name: token.full_name,
     is_shortened: token.is_shortened,
     hints,
+    fun_fact: scheduled?.fun_fact || null,
     set_at: new Date(),
   };
 

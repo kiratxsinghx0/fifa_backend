@@ -232,13 +232,17 @@ async function login(req, res) {
       } catch { /* non-critical */ }
     }
 
+    const loginHardModePref = (gameResult && (gameResult.hard_mode === true || gameResult.hard_mode === 1))
+      ? true
+      : !!user.hard_mode_pref;
+
     res.json({
       success: true,
       data: {
         token,
         user: { id: user.id, email: user.email },
         godmode_activated_at: godmodeActivatedAt,
-        hard_mode_pref: !!user.hard_mode_pref,
+        hard_mode_pref: loginHardModePref,
       },
     });
   } catch (err) {

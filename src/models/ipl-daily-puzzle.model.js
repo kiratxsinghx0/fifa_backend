@@ -11,6 +11,7 @@ const CREATE_IPL_DAILY_PUZZLES_TABLE = `
     full_name     VARCHAR(100)  DEFAULT NULL COMMENT 'Player full name snapshot',
     is_shortened  TINYINT(1)    NOT NULL DEFAULT 0,
     hints         JSON          DEFAULT NULL COMMENT 'All player hint data for this puzzle',
+    fun_fact      TEXT          DEFAULT NULL COMMENT 'Fun fact about this player, shown next day',
     set_at        TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY    uk_day (day),
@@ -59,16 +60,17 @@ async function findLatest() {
 }
 
 async function create(puzzle) {
-  const { day, player_id, encoded, hash, previous_hash, full_name, is_shortened, hints, set_at } = puzzle;
+  const { day, player_id, encoded, hash, previous_hash, full_name, is_shortened, hints, fun_fact, set_at } = puzzle;
   const [result] = await pool.execute(
-    `INSERT INTO ipl_daily_puzzles (day, player_id, encoded, hash, previous_hash, full_name, is_shortened, hints, set_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO ipl_daily_puzzles (day, player_id, encoded, hash, previous_hash, full_name, is_shortened, hints, fun_fact, set_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       day, player_id, encoded, hash,
       previous_hash || null,
       full_name || null,
       is_shortened ? 1 : 0,
       hints ? JSON.stringify(hints) : null,
+      fun_fact || null,
       set_at || new Date(),
     ]
   );

@@ -870,18 +870,6 @@ async function getPreferences(req, res) {
       if (elapsed >= 24 * 60 * 60 * 1000) {
         godmodeTs = null;
         UserModel.setGodmodeActivatedAt(req.userId, null).catch(() => {});
-      } else {
-        const todayHardPuzzle = await IplHardmodeDailyPuzzleModel.findToday();
-        if (!todayHardPuzzle) {
-          godmodeTs = null;
-          UserModel.setGodmodeActivatedAt(req.userId, null).catch(() => {});
-        } else {
-          const hmResult = await UserHardModeResultModel.findByUserAndDay(req.userId, todayHardPuzzle.day);
-          if (!hmResult || !hmResult.won) {
-            godmodeTs = null;
-            UserModel.setGodmodeActivatedAt(req.userId, null).catch(() => {});
-          }
-        }
       }
     }
 
@@ -974,6 +962,12 @@ async function syncHardModeResults(req, res) {
               num_guesses: v.num_guesses,
               time_seconds: v.time_seconds ?? 0,
             });
+            if (!user.godmode_activated_at || (Date.now() - user.godmode_activated_at) >= 24 * 60 * 60 * 1000) {
+              const ts = Date.now();
+              await UserModel.setGodmodeActivatedAt(req.userId, ts);
+              UserAchievementsModel.incrementGodmodeActivations(req.userId).catch(() => {});
+              invalidateGodmodeEmailCache();
+            }
             break;
           }
         }

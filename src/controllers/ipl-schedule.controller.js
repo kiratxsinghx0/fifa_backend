@@ -20,14 +20,14 @@ async function getQueue(req, res) {
 
 async function addSchedule(req, res) {
   try {
-    const { player_name, full_name, hints } = req.body;
+    const { player_name, full_name, hints, fun_fact } = req.body;
     if (!player_name || typeof player_name !== "string") {
       return res.status(400).json({ success: false, message: "player_name is required (5-letter token)" });
     }
     if (!full_name || typeof full_name !== "string") {
       return res.status(400).json({ success: false, message: "full_name is required" });
     }
-    await ScheduleIplPuzzleModel.create({ player_name, full_name, hints: hints || null });
+    await ScheduleIplPuzzleModel.create({ player_name, full_name, hints: hints || null, fun_fact: fun_fact || null });
     res.status(201).json({ success: true, message: "Scheduled puzzle added" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

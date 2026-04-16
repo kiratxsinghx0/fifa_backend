@@ -6,6 +6,7 @@ const CREATE_SCHEDULED_IPL_PUZZLES_TABLE = `
     player_name   VARCHAR(10)   NOT NULL COMMENT '5-letter wordle token (e.g. VIRAT)',
     full_name     VARCHAR(100)  NOT NULL COMMENT 'Canonical player name',
     hints         JSON          DEFAULT NULL COMMENT 'Hint data for the puzzle',
+    fun_fact      TEXT          DEFAULT NULL COMMENT 'Fun fact about this player, shown next day',
     used          TINYINT(1)    NOT NULL DEFAULT 0 COMMENT '1 once promoted to ipl_daily_puzzles',
     created_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP     DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -34,14 +35,15 @@ async function markUsed(id) {
 }
 
 async function create(entry) {
-  const { player_name, full_name, hints } = entry;
+  const { player_name, full_name, hints, fun_fact } = entry;
   const [result] = await pool.execute(
-    `INSERT INTO scheduled_ipl_puzzles (player_name, full_name, hints)
-     VALUES (?, ?, ?)`,
+    `INSERT INTO scheduled_ipl_puzzles (player_name, full_name, hints, fun_fact)
+     VALUES (?, ?, ?, ?)`,
     [
       player_name.toUpperCase(),
       full_name,
       hints ? JSON.stringify(hints) : null,
+      fun_fact || null,
     ]
   );
   return result;
@@ -53,12 +55,13 @@ async function bulkCreate(entries) {
     await conn.beginTransaction();
     for (const e of entries) {
       await conn.execute(
-        `INSERT INTO scheduled_ipl_puzzles (player_name, full_name, hints)
-         VALUES (?, ?, ?)`,
+        `INSERT INTO scheduled_ipl_puzzles (player_name, full_name, hints, fun_fact)
+         VALUES (?, ?, ?, ?)`,
         [
           e.player_name.toUpperCase(),
           e.full_name,
           e.hints ? JSON.stringify(e.hints) : null,
+          e.fun_fact || null,
         ]
       );
     }
