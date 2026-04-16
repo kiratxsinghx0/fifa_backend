@@ -25,4 +25,7 @@ router.get("/leaderboard/hard-mode/weekly", userStatsController.weeklyHardModeLe
 router.get("/leaderboard/hard-mode/monthly", userStatsController.monthlyHardModeLeaderboard);
 router.get("/leaderboard/hard-mode/all-time", userStatsController.allTimeHardModeLeaderboard);
 
+router.post("/archive/result", authRequired, userStatsController.saveArchiveResult);
+router.get("/archive/played", authRequired, userStatsController.getArchivePlayed);
+
 module.exports = router;

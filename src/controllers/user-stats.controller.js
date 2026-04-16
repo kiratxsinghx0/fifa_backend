@@ -1,5 +1,6 @@
 const UserGameResultModel = require("../models/user-game-result.model");
 const UserHardModeResultModel = require("../models/user-hard-mode-result.model");
+const UserArchiveResultModel = require("../models/user-archive-result.model");
 const UserModel = require("../models/user.model");
 const UserAchievementsModel = require("../models/user-achievements.model");
 const GameProgressModel = require("../models/ipl-game-progress.model");
@@ -835,12 +836,12 @@ async function getProgress(req, res) {
 
 async function activateGodmode(req, res) {
   try {
-    const latestHardPuzzle = await IplHardmodeDailyPuzzleModel.findLatest();
-    if (!latestHardPuzzle) {
-      return res.status(403).json({ success: false, message: "No hard mode puzzle available" });
+    const todayHardPuzzle = await IplHardmodeDailyPuzzleModel.findToday();
+    if (!todayHardPuzzle) {
+      return res.status(403).json({ success: false, message: "No hard mode puzzle available today" });
     }
 
-    const hmResult = await UserHardModeResultModel.findByUserAndDay(req.userId, latestHardPuzzle.day);
+    const hmResult = await UserHardModeResultModel.findByUserAndDay(req.userId, todayHardPuzzle.day);
     if (!hmResult || !hmResult.won) {
       return res.status(403).json({ success: false, message: "Must win today's hard mode to unlock Godmode" });
     }
@@ -861,10 +862,33 @@ async function getPreferences(req, res) {
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
+
+    let godmodeTs = user.godmode_activated_at ?? null;
+
+    if (godmodeTs != null) {
+      const elapsed = Date.now() - godmodeTs;
+      if (elapsed >= 24 * 60 * 60 * 1000) {
+        godmodeTs = null;
+        UserModel.setGodmodeActivatedAt(req.userId, null).catch(() => {});
+      } else {
+        const todayHardPuzzle = await IplHardmodeDailyPuzzleModel.findToday();
+        if (!todayHardPuzzle) {
+          godmodeTs = null;
+          UserModel.setGodmodeActivatedAt(req.userId, null).catch(() => {});
+        } else {
+          const hmResult = await UserHardModeResultModel.findByUserAndDay(req.userId, todayHardPuzzle.day);
+          if (!hmResult || !hmResult.won) {
+            godmodeTs = null;
+            UserModel.setGodmodeActivatedAt(req.userId, null).catch(() => {});
+          }
+        }
+      }
+    }
+
     res.json({
       success: true,
       data: {
-        godmode_activated_at: user.godmode_activated_at ?? null,
+        godmode_activated_at: godmodeTs,
         hard_mode_pref: !!user.hard_mode_pref,
       },
     });
@@ -964,6 +988,38 @@ async function syncHardModeResults(req, res) {
   }
 }
 
+/* ── Archive Results ── */
+
+async function saveArchiveResult(req, res) {
+  try {
+    const { puzzle_day, won } = req.body;
+    if (puzzle_day == null) {
+      return res.status(400).json({ success: false, message: "puzzle_day is required" });
+    }
+    const day = Number(puzzle_day);
+    if (!Number.isInteger(day) || day < 1) {
+      return res.status(400).json({ success: false, message: "Invalid puzzle_day" });
+    }
+    await UserArchiveResultModel.create({
+      user_id: req.userId,
+      puzzle_day: day,
+      won: won === true || won === 1,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function getArchivePlayed(req, res) {
+  try {
+    const rows = await UserArchiveResultModel.findByUser(req.userId);
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
 module.exports = {
   getMyStats, saveResult, syncResults,
   todayLeaderboard, allTimeLeaderboard,
@@ -975,4 +1031,5 @@ module.exports = {
   saveProgress, getProgress,
   activateGodmode, getPreferences, updatePreferences,
   refreshAchievements,
+  saveArchiveResult, getArchivePlayed,
 };

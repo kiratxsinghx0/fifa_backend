@@ -29,6 +29,7 @@ const HardmodeLivePuzzleStatsModel = require("./src/models/hardmode-live-puzzle-
 const GameProgressModel = require("./src/models/ipl-game-progress.model");
 const HardModeGameProgressModel = require("./src/models/ipl-hardmode-game-progress.model");
 const UserAchievementsModel = require("./src/models/user-achievements.model");
+const UserArchiveResultModel = require("./src/models/user-archive-result.model");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -53,6 +54,7 @@ app.use("/api/ipl/schedule", iplScheduleRoutes);
 app.use("/api/ipl/schedule/hard-mode", iplHardmodeScheduleRoutes);
 // Auth & user routes
 app.use("/api/auth", authRoutes);
+
 app.use("/api/user", userStatsRoutes);
 app.use("/api/live-stats", liveStatsRoutes);
 app.use("/api/live-stats/hard-mode", hardmodeLiveStatsRoutes);
@@ -85,6 +87,7 @@ async function bootstrap() {
   await GameProgressModel.createTable();
   await HardModeGameProgressModel.createTable();
   await UserAchievementsModel.createTable();
+  await UserArchiveResultModel.createTable();
   console.log("Database tables ensured");
 
   server = app.listen(PORT, () => {
