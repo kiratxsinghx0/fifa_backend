@@ -55,6 +55,14 @@ async function getTodayPuzzle() {
     throw Object.assign(new Error("No IPL puzzle available yet"), { status: 404 });
   }
   const formatted = formatPuzzleResponse(puzzle);
+
+  if (puzzle.day > 1) {
+    const yesterday = await IplDailyPuzzleModel.findByDay(puzzle.day - 1);
+    formatted.funFact = yesterday?.fun_fact || null;
+  } else {
+    formatted.funFact = null;
+  }
+
   puzzleCache.latest = formatted;
   puzzleCache.expiry = now + CACHE_TTL;
   return formatted;
@@ -145,7 +153,6 @@ function formatPuzzleResponse(puzzle) {
     fullName: puzzle.full_name || null,
     isShortened: Boolean(puzzle.is_shortened),
     hints,
-    funFact: puzzle.fun_fact || null,
     setAt: puzzle.set_at,
   };
 }
