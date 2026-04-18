@@ -1,7 +1,9 @@
 require("dotenv").config();
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
 const cron = require("node-cron");
+const { Server: SocketIOServer } = require("socket.io");
 const { testConnection } = require("./src/config/db");
 const PlayerModel = require("./src/models/player.model");
 const DailyPuzzleModel = require("./src/models/daily-puzzle.model");
@@ -21,6 +23,7 @@ const authRoutes = require("./src/routes/auth.routes");
 const userStatsRoutes = require("./src/routes/user-stats.routes");
 const liveStatsRoutes = require("./src/routes/live-stats.routes");
 const hardmodeLiveStatsRoutes = require("./src/routes/hardmode-live-stats.routes");
+const challengeRoutes = require("./src/routes/challenge.routes");
 const UserModel = require("./src/models/user.model");
 const UserGameResultModel = require("./src/models/user-game-result.model");
 const UserHardModeResultModel = require("./src/models/user-hard-mode-result.model");
@@ -30,9 +33,19 @@ const GameProgressModel = require("./src/models/ipl-game-progress.model");
 const HardModeGameProgressModel = require("./src/models/ipl-hardmode-game-progress.model");
 const UserAchievementsModel = require("./src/models/user-achievements.model");
 const UserArchiveResultModel = require("./src/models/user-archive-result.model");
+const ChallengePlayerModel = require("./src/models/challenge-player.model");
+const ChallengeRoomModel = require("./src/models/challenge-room.model");
+const ChallengeRoundModel = require("./src/models/challenge-round.model");
+const ChallengeGuessModel = require("./src/models/challenge-guess.model");
+const { initChallengeSocket } = require("./src/socket/challenge-socket");
 
 const app = express();
+const httpServer = http.createServer(app);
 const PORT = process.env.PORT || 3001;
+
+const io = new SocketIOServer(httpServer, {
+  cors: { origin: "*", methods: ["GET", "POST"] },
+});
 
 app.use(cors());
 app.use(express.json());
@@ -58,6 +71,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/user", userStatsRoutes);
 app.use("/api/live-stats", liveStatsRoutes);
 app.use("/api/live-stats/hard-mode", hardmodeLiveStatsRoutes);
+app.use("/api/challenge", challengeRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
@@ -88,9 +102,16 @@ async function bootstrap() {
   await HardModeGameProgressModel.createTable();
   await UserAchievementsModel.createTable();
   await UserArchiveResultModel.createTable();
+  await ChallengePlayerModel.createTable();
+  await ChallengeRoomModel.createTable();
+  await ChallengeRoundModel.createTable();
+  await ChallengeGuessModel.createTable();
   console.log("Database tables ensured");
 
-  server = app.listen(PORT, () => {
+  initChallengeSocket(io);
+  console.log("Socket.IO challenge handler initialized");
+
+  server = httpServer.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 
@@ -124,6 +145,16 @@ async function bootstrap() {
     }
   }, { timezone: "UTC" });
   console.log("Cron job scheduled: daily IPL hard mode puzzle at 6:01 AM IST (00:31 UTC)");
+
+  // Expire stale challenge rooms every 5 minutes
+  cron.schedule("*/5 * * * *", async () => {
+    try {
+      const expired = await ChallengeRoomModel.expireOldRooms(15);
+      if (expired > 0) console.log(`[CRON] Expired ${expired} stale challenge rooms`);
+    } catch (err) {
+      console.error("[CRON] Failed to expire challenge rooms:", err.message);
+    }
+  });
 }
 
 function gracefulShutdown(signal) {

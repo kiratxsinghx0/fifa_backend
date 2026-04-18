@@ -607,6 +607,15 @@ async function saveHardModeResult(req, res) {
           num_guesses: guesses,
           time_seconds: timeSec ?? 0,
         });
+
+        if (day === latestHardPuzzle.day) {
+          if (!user.godmode_activated_at || (Date.now() - user.godmode_activated_at) >= 24 * 60 * 60 * 1000) {
+            const ts = Date.now();
+            await UserModel.setGodmodeActivatedAt(req.userId, ts);
+            UserAchievementsModel.incrementGodmodeActivations(req.userId).catch(() => {});
+            invalidateGodmodeEmailCache();
+          }
+        }
       }
     }
 
