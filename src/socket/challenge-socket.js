@@ -22,10 +22,12 @@ function getRoomState(roomCode) {
       creatorReady: false,
       opponentReady: false,
       usedPlayerIds: [],
+      usedFullNames: [],
       roundDbId: null,
       answer: null,
       fullName: null,
       playerList: null,
+      tokenToFullName: null,
       creatorGuesses: 0,
       opponentGuesses: 0,
       creatorFinished: false,
@@ -75,8 +77,27 @@ async function loadMultiModePlayerNames() {
   return new Set(players.map((p) => p.player_name.toLowerCase()));
 }
 
+async function loadTokenToFullNameMap() {
+  const [iplPlayers, multiPlayers] = await Promise.all([
+    IplPlayerModel.findAll(),
+    ChallengePlayerModel.findAll(),
+  ]);
+  const map = new Map();
+  for (const p of iplPlayers) {
+    const token = p.name.toLowerCase();
+    if (!map.has(token)) map.set(token, []);
+    map.get(token).push(p.full_name);
+  }
+  for (const p of multiPlayers) {
+    const token = p.player_name.toLowerCase();
+    if (!map.has(token)) map.set(token, []);
+    if (!map.get(token).includes(p.full_name)) map.get(token).push(p.full_name);
+  }
+  return map;
+}
+
 async function startNewRound(io, roomCode, state) {
-  const challengePlayer = await ChallengePlayerModel.findRandomExcluding(state.usedPlayerIds);
+  const challengePlayer = await ChallengePlayerModel.findRandomExcludingByFullName(state.usedFullNames);
   if (!challengePlayer) {
     io.to(roomCode).emit("room-error", { message: "No challenge players available." });
     return false;
@@ -108,11 +129,13 @@ async function startNewRound(io, roomCode, state) {
   state.fullName = challengePlayer.full_name;
   state.gameStarted = true;
   state.usedPlayerIds.push(challengePlayer.id);
+  state.usedFullNames.push(challengePlayer.full_name);
 
   if (!state.playerList) {
     const iplNames = await loadValidPlayerNames();
     const multiNames = await loadMultiModePlayerNames();
     state.playerList = new Set([...iplNames, ...multiNames]);
+    state.tokenToFullName = await loadTokenToFullNameMap();
   }
 
   if (state.creator) {
@@ -364,9 +387,19 @@ function initChallengeSocket(io) {
           return socket.emit("room-error", { message: "No more guesses remaining" });
         }
 
-        const statuses = getLetterStatuses(guessLower, state.answer);
-        const { correct, present } = countStatuses(statuses);
-        const isCorrect = correct === WORD_LENGTH;
+        let statuses = getLetterStatuses(guessLower, state.answer);
+        let { correct, present } = countStatuses(statuses);
+        let isCorrect = correct === WORD_LENGTH;
+
+        if (!isCorrect && guessLower !== state.answer && state.tokenToFullName && state.fullName) {
+          const guessFullNames = state.tokenToFullName.get(guessLower) || [];
+          if (guessFullNames.includes(state.fullName)) {
+            statuses = Array(WORD_LENGTH).fill("correct");
+            correct = WORD_LENGTH;
+            present = 0;
+            isCorrect = true;
+          }
+        }
 
         if (isCreator) {
           state.creatorGuesses = guessCount;
@@ -449,6 +482,12 @@ function initChallengeSocket(io) {
             const roundGuesses = await ChallengeGuessModel.findByRound(state.roundDbId);
             const { creatorBoard, opponentBoard } = buildBoards(roundGuesses);
 
+            const winnerBoard = finalRoundWinner === "creator" ? creatorBoard
+              : finalRoundWinner === "opponent" ? opponentBoard : null;
+            const winningGuess = winnerBoard?.find((g) => g.isCorrect);
+            const aliasWord = (winningGuess && winningGuess.guess !== state.answer)
+              ? state.answer.toUpperCase() : null;
+
             // Is this a standalone game (series_length=1) or a mid-series round?
             if (state.seriesLength === 1) {
               // Standalone game — emit game-over, but do NOT cleanupRoom.
@@ -467,6 +506,7 @@ function initChallengeSocket(io) {
                 opponentName: room.opponent_name,
                 creatorBoard,
                 opponentBoard,
+                aliasWord,
               });
               // Room stays alive for series proposal
             } else {
@@ -504,6 +544,7 @@ function initChallengeSocket(io) {
                   opponentName: room.opponent_name,
                   creatorBoard,
                   opponentBoard,
+                  aliasWord,
                 });
 
                 cleanupRoom(roomCode);
@@ -528,6 +569,7 @@ function initChallengeSocket(io) {
                   opponentName: room.opponent_name,
                   creatorBoard,
                   opponentBoard,
+                  aliasWord,
                 });
               }
             }

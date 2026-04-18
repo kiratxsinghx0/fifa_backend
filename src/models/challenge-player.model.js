@@ -53,6 +53,23 @@ async function findRandomExcluding(excludeIds) {
   return rows[0] || null;
 }
 
+async function findRandomExcludingByFullName(excludeNames) {
+  const names = (excludeNames || []).filter(Boolean);
+  if (names.length === 0) return findRandom();
+  const placeholders = names.map(() => "?").join(", ");
+  const [[{ cnt }]] = await pool.execute(
+    `SELECT COUNT(*) AS cnt FROM ipl_multi_mode_players WHERE CHAR_LENGTH(player_name) = 5 AND full_name NOT IN (${placeholders})`,
+    names
+  );
+  const total = Number(cnt);
+  if (total === 0) return findRandom();
+  const offset = Math.floor(Math.random() * total);
+  const [rows] = await pool.query(
+    `SELECT * FROM ipl_multi_mode_players WHERE CHAR_LENGTH(player_name) = 5 AND full_name NOT IN (${names.map((n) => pool.escape(n)).join(", ")}) LIMIT 1 OFFSET ${offset}`
+  );
+  return rows[0] || null;
+}
+
 async function findById(id) {
   const [rows] = await pool.execute(
     "SELECT * FROM ipl_multi_mode_players WHERE id = ?",
@@ -113,6 +130,7 @@ module.exports = {
   findAll,
   findRandom,
   findRandomExcluding,
+  findRandomExcludingByFullName,
   findById,
   findByName,
   create,
