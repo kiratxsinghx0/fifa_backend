@@ -52,7 +52,7 @@ async function getPuzzleByDay(req, res) {
 
 async function setDailyPuzzle(req, res) {
   try {
-    const { player_name, full_name, hints } = req.body;
+    const { player_name, full_name, hints, fun_fact } = req.body;
     if (!player_name || typeof player_name !== "string") {
       return res.status(400).json({ success: false, message: "player_name is required (5-letter answer token)" });
     }
@@ -62,7 +62,7 @@ async function setDailyPuzzle(req, res) {
     if (!hints || !Array.isArray(hints)) {
       return res.status(400).json({ success: false, message: "hints array is required" });
     }
-    const result = await iplPlayerService.setDailyPuzzle(player_name, full_name, hints);
+    const result = await iplPlayerService.setDailyPuzzle(player_name, full_name, hints, fun_fact);
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

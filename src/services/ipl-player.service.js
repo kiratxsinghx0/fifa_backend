@@ -92,7 +92,7 @@ async function getPuzzleByDay(day) {
  * @param {string} fullName   - canonical player name to disambiguate shared tokens
  * @param {Array}  hints      - hint data array for the puzzle
  */
-async function setDailyPuzzle(playerName, fullName, hints) {
+async function setDailyPuzzle(playerName, fullName, hints, funFact) {
   const name = playerName.toUpperCase();
 
   const player = await IplPlayerModel.findByNameAndPlayer(name, fullName);
@@ -129,6 +129,7 @@ async function setDailyPuzzle(playerName, fullName, hints) {
     full_name: player.full_name,
     is_shortened: player.is_shortened,
     hints: hints || null,
+    fun_fact: funFact || null,
     set_at: new Date(),
   };
 

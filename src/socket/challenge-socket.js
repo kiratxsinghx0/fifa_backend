@@ -594,6 +594,7 @@ function initChallengeSocket(io) {
         if (!state.roundOneWinner) return; // game hasn't ended yet
 
         state.pendingProposal = { seriesLength, proposerRole: currentRole };
+        state.declinedRoles = null;
 
         const room = await ChallengeRoomModel.findByCode(roomCode);
         const proposerName = currentRole === "creator" ? room.creator_name : room.opponent_name;
@@ -670,12 +671,17 @@ function initChallengeSocket(io) {
 
         state.pendingProposal = null;
 
+        if (!state.declinedRoles) state.declinedRoles = new Set();
+        state.declinedRoles.add(currentRole);
+
         const otherSocket = currentRole === "creator" ? state.opponent : state.creator;
         if (otherSocket) {
           otherSocket.emit("series-declined");
         }
 
-        cleanupRoom(roomCode);
+        if (state.declinedRoles.size >= 2) {
+          cleanupRoom(roomCode);
+        }
       } catch (err) {
         console.error("decline-series error:", err);
       }
@@ -715,6 +721,7 @@ function initChallengeSocket(io) {
       if (!state) return;
 
       const role = currentRole;
+      const roomCode = currentRoom;
 
       if (role === "creator") {
         state.creator = null;
@@ -729,16 +736,28 @@ function initChallengeSocket(io) {
 
       if (!state.gameStarted && state.currentRound === 1 && !state.roundOneWinner && role === "creator") {
         try {
-          const room = await ChallengeRoomModel.findByCode(currentRoom);
+          const room = await ChallengeRoomModel.findByCode(roomCode);
           if (room && room.status === "waiting") {
             await ChallengeRoomModel.expireOldRooms(0);
           }
         } catch { /* non-critical */ }
-        cleanupRoom(currentRoom);
+        cleanupRoom(roomCode);
+        return;
       }
 
       if (!state.creator && !state.opponent) {
-        cleanupRoom(currentRoom);
+        cleanupRoom(roomCode);
+        return;
+      }
+
+      // Post-game disconnect: if game ended and no series active, clean up after timeout
+      if (state.roundOneWinner && state.seriesLength === 1) {
+        setTimeout(() => {
+          const s = roomSockets.get(roomCode);
+          if (s && (!s.creator || !s.opponent) && s.seriesLength === 1) {
+            cleanupRoom(roomCode);
+          }
+        }, 30000);
       }
     });
   });
