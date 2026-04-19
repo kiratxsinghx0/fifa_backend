@@ -3,6 +3,8 @@ const ChallengeRoundModel = require("../models/challenge-round.model");
 const ChallengeGuessModel = require("../models/challenge-guess.model");
 const ChallengePlayerModel = require("../models/challenge-player.model");
 const IplPlayerModel = require("../models/ipl-player.model");
+const ChallengeConversionModel = require("../models/challenge-conversion.model");
+const UserActivityModel = require("../models/user-activity.model");
 const {
   getLetterStatuses, countStatuses, xorEncode,
   ENCODE_KEY, WORD_LENGTH, MAX_GUESSES,
@@ -328,6 +330,13 @@ function initChallengeSocket(io) {
         // Both sockets connected on a waiting room — start round 1
         if (state.creator && state.opponent && !state.gameStarted) {
           await ChallengeRoomModel.startGame(roomCode);
+
+          const deviceId = (data.deviceId || "").slice(0, 64);
+          if (deviceId) {
+            const uid = role === "creator" ? (room.creator_user_id || null) : (room.opponent_user_id || null);
+            UserActivityModel.upsert(deviceId, uid, "challenge").catch(() => {});
+          }
+
           const ok = await startNewRound(io, roomCode, state);
           if (!ok) return;
           return;
@@ -498,6 +507,8 @@ function initChallengeSocket(io) {
               state.roundOneAnswer = state.answer;
               state.roundOneFullName = state.fullName;
 
+              ChallengeConversionModel.create(roomCode).catch(() => {});
+
               io.to(roomCode).emit("game-over", {
                 winner: finalRoundWinner,
                 answer: state.answer,
@@ -596,6 +607,8 @@ function initChallengeSocket(io) {
         state.pendingProposal = { seriesLength, proposerRole: currentRole };
         state.declinedRoles = null;
 
+        ChallengeConversionModel.markProposed(roomCode).catch(() => {});
+
         const room = await ChallengeRoomModel.findByCode(roomCode);
         const proposerName = currentRole === "creator" ? room.creator_name : room.opponent_name;
 
@@ -625,6 +638,8 @@ function initChallengeSocket(io) {
         const { seriesLength } = state.pendingProposal;
         state.seriesLength = seriesLength;
         state.pendingProposal = null;
+
+        ChallengeConversionModel.markAccepted(roomCode, seriesLength).catch(() => {});
 
         // Retroactively score Round 1
         if (state.roundOneWinner === "creator") {

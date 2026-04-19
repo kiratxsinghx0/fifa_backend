@@ -7,6 +7,7 @@ const GameProgressModel = require("../models/ipl-game-progress.model");
 const HardModeGameProgressModel = require("../models/ipl-hardmode-game-progress.model");
 const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
 const IplHardmodeDailyPuzzleModel = require("../models/ipl-hardmode-daily-puzzle.model");
+const UserActivityModel = require("../models/user-activity.model");
 
 const LEADERBOARD_TTL = 3 * 60 * 1000;
 const TODAY_CACHE_MAX_ENTRIES = 2;
@@ -262,6 +263,11 @@ async function saveResult(req, res) {
     }
 
     refreshAchievements(req.userId, "normal").catch(() => {});
+
+    const deviceId = req.body.device_id || req.headers["x-device-id"];
+    if (deviceId) {
+      UserActivityModel.upsert(deviceId, req.userId, "daily").catch(() => {});
+    }
 
     res.status(201).json({ success: true, data: { ...merged, todayRank } });
   } catch (err) {
@@ -620,6 +626,11 @@ async function saveHardModeResult(req, res) {
     }
 
     refreshAchievements(req.userId, "hard").catch(() => {});
+
+    const deviceId = req.body.device_id || req.headers["x-device-id"];
+    if (deviceId) {
+      UserActivityModel.upsert(deviceId, req.userId, "hard").catch(() => {});
+    }
 
     res.status(201).json({ success: true, data: { todayRank } });
   } catch (err) {
@@ -1008,6 +1019,12 @@ async function saveArchiveResult(req, res) {
       puzzle_day: day,
       won: won === true || won === 1,
     });
+
+    const deviceId = req.body.device_id || req.headers["x-device-id"];
+    if (deviceId) {
+      UserActivityModel.upsert(deviceId, req.userId, "archive").catch(() => {});
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

@@ -1,5 +1,6 @@
 const HardmodeLivePuzzleStatsModel = require("../models/hardmode-live-puzzle-stats.model");
 const IplHardmodeDailyPuzzleModel = require("../models/ipl-hardmode-daily-puzzle.model");
+const UserActivityModel = require("../models/user-activity.model");
 
 const rateLimitMap = new Map();
 const RATE_WINDOW_MS = 60_000;
@@ -126,6 +127,12 @@ async function incrementGameStart(req, res) {
     }
 
     await HardmodeLivePuzzleStatsModel.incrementGameStart(day);
+
+    const deviceId = req.body.device_id || req.headers["x-device-id"];
+    if (deviceId) {
+      UserActivityModel.upsert(deviceId, null, "hard").catch(() => {});
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

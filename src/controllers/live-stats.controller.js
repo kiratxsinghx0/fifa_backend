@@ -1,5 +1,6 @@
 const LivePuzzleStatsModel = require("../models/live-puzzle-stats.model");
 const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
+const UserActivityModel = require("../models/user-activity.model");
 
 const rateLimitMap = new Map();
 const RATE_WINDOW_MS = 60_000;
@@ -126,6 +127,12 @@ async function incrementGameStart(req, res) {
     }
 
     await LivePuzzleStatsModel.incrementGameStart(day);
+
+    const deviceId = req.body.device_id || req.headers["x-device-id"];
+    if (deviceId) {
+      UserActivityModel.upsert(deviceId, null, "daily").catch(() => {});
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });

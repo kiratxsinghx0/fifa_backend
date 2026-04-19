@@ -37,6 +37,8 @@ const ChallengePlayerModel = require("./src/models/challenge-player.model");
 const ChallengeRoomModel = require("./src/models/challenge-room.model");
 const ChallengeRoundModel = require("./src/models/challenge-round.model");
 const ChallengeGuessModel = require("./src/models/challenge-guess.model");
+const UserActivityModel = require("./src/models/user-activity.model");
+const ChallengeConversionModel = require("./src/models/challenge-conversion.model");
 const { initChallengeSocket } = require("./src/socket/challenge-socket");
 
 const app = express();
@@ -106,6 +108,8 @@ async function bootstrap() {
   await ChallengeRoomModel.createTable();
   await ChallengeRoundModel.createTable();
   await ChallengeGuessModel.createTable();
+  await UserActivityModel.createTable();
+  await ChallengeConversionModel.createTable();
   console.log("Database tables ensured");
 
   initChallengeSocket(io);
