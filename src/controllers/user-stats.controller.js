@@ -175,7 +175,18 @@ async function getMyStats(req, res) {
     const stats = computeStats(rows);
     const merged = user ? mergeWithPerModeBaseline(stats, user, "normal") : stats;
     if (achievements) {
-      merged.currentStreak = Math.max(merged.currentStreak, achievements.normal_current_streak || 0);
+      const staleCutoff = Date.now() - 24 * 60 * 60 * 1000;
+      const lastUpdated = new Date(achievements.updated_at).getTime();
+      const isStale = lastUpdated < staleCutoff;
+
+      if (isStale) {
+        merged.currentStreak = 0;
+        UserAchievementsModel.updateNormalStreaks(
+          req.userId, 0, Math.max(merged.maxStreak, achievements.normal_max_streak || 0)
+        ).catch(() => {});
+      } else {
+        merged.currentStreak = Math.max(merged.currentStreak, achievements.normal_current_streak || 0);
+      }
       merged.maxStreak = Math.max(merged.maxStreak, achievements.normal_max_streak || 0);
     }
     res.json({ success: true, data: merged });
@@ -927,7 +938,18 @@ async function getMyHardModeStats(req, res) {
     const stats = computeStats(rows);
     const merged = user ? mergeWithPerModeBaseline(stats, user, "hard") : stats;
     if (achievements) {
-      merged.currentStreak = Math.max(merged.currentStreak, achievements.hard_current_streak || 0);
+      const staleCutoff = Date.now() - 24 * 60 * 60 * 1000;
+      const lastUpdated = new Date(achievements.updated_at).getTime();
+      const isStale = lastUpdated < staleCutoff;
+
+      if (isStale) {
+        merged.currentStreak = 0;
+        UserAchievementsModel.updateHardStreaks(
+          req.userId, 0, Math.max(merged.maxStreak, achievements.hard_max_streak || 0)
+        ).catch(() => {});
+      } else {
+        merged.currentStreak = Math.max(merged.currentStreak, achievements.hard_current_streak || 0);
+      }
       merged.maxStreak = Math.max(merged.maxStreak, achievements.hard_max_streak || 0);
     }
     res.json({ success: true, data: merged });
