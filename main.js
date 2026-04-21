@@ -24,6 +24,7 @@ const userStatsRoutes = require("./src/routes/user-stats.routes");
 const liveStatsRoutes = require("./src/routes/live-stats.routes");
 const hardmodeLiveStatsRoutes = require("./src/routes/hardmode-live-stats.routes");
 const challengeRoutes = require("./src/routes/challenge.routes");
+const rewardsRoutes = require("./src/routes/rewards.routes");
 const UserModel = require("./src/models/user.model");
 const UserGameResultModel = require("./src/models/user-game-result.model");
 const UserHardModeResultModel = require("./src/models/user-hard-mode-result.model");
@@ -39,6 +40,8 @@ const ChallengeRoundModel = require("./src/models/challenge-round.model");
 const ChallengeGuessModel = require("./src/models/challenge-guess.model");
 const UserActivityModel = require("./src/models/user-activity.model");
 const ChallengeConversionModel = require("./src/models/challenge-conversion.model");
+const WeeklyWinnersModel = require("./src/models/weekly-winners.model");
+const RewardClaimModel = require("./src/models/reward-claim.model");
 const { initChallengeSocket } = require("./src/socket/challenge-socket");
 
 const app = express();
@@ -74,6 +77,7 @@ app.use("/api/user", userStatsRoutes);
 app.use("/api/live-stats", liveStatsRoutes);
 app.use("/api/live-stats/hard-mode", hardmodeLiveStatsRoutes);
 app.use("/api/challenge", challengeRoutes);
+app.use("/api/rewards", rewardsRoutes);
 
 app.use((_req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
@@ -110,6 +114,8 @@ async function bootstrap() {
   await ChallengeGuessModel.createTable();
   await UserActivityModel.createTable();
   await ChallengeConversionModel.createTable();
+  await WeeklyWinnersModel.createTable();
+  await RewardClaimModel.createTable();
   console.log("Database tables ensured");
 
   initChallengeSocket(io);
@@ -149,6 +155,23 @@ async function bootstrap() {
     }
   }, { timezone: "UTC" });
   console.log("Cron job scheduled: daily IPL hard mode puzzle at 6:01 AM IST (00:31 UTC)");
+
+  // Weekly winners snapshot: Monday 6:05 AM IST = 00:35 UTC
+  const { snapshotWeeklyWinners } = require("./src/controllers/rewards.controller");
+  cron.schedule("35 0 * * 1", async () => {
+    console.log("[CRON] Snapshotting last week's top 5 winners…");
+    try {
+      const result = await snapshotWeeklyWinners();
+      if (result.weekNumber === null) {
+        console.log("[CRON] No winners found for last week.");
+      } else {
+        console.log(`[CRON] Week ${result.weekNumber} snapshot created with ${result.count} winners`);
+      }
+    } catch (err) {
+      console.error("[CRON] Failed to snapshot weekly winners:", err.message);
+    }
+  }, { timezone: "UTC" });
+  console.log("Cron job scheduled: weekly winners snapshot every Monday at 6:05 AM IST (00:35 UTC)");
 
   // Expire stale challenge rooms every 5 minutes
   cron.schedule("*/5 * * * *", async () => {

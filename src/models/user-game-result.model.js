@@ -146,6 +146,51 @@ async function getWeeklyLeaderboard() {
   return rows;
 }
 
+async function getLastWeekLeaderboard() {
+  const [rows] = await pool.execute(
+    `SELECT
+       ugr.user_id,
+       u.email,
+       SUM(ugr.won) AS games_won,
+       ${POINTS_EXPR} AS points
+     FROM user_game_results ugr
+     JOIN users u ON u.id = ugr.user_id
+     JOIN ipl_daily_puzzles p ON p.day = ugr.puzzle_day
+     WHERE p.set_at >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 7 DAY)
+       AND p.set_at <  DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+     GROUP BY ugr.user_id, u.email
+     HAVING games_won >= 1
+     ORDER BY points DESC, games_won DESC
+     LIMIT 5`
+  );
+  return rows;
+}
+
+/** 1-based rank in last week's leaderboard, or null if user had no qualifying games. */
+async function getLastWeekRankForUser(userId) {
+  const [rows] = await pool.execute(
+    `SELECT rnk FROM (
+       SELECT user_id,
+         ROW_NUMBER() OVER (ORDER BY points DESC, games_won DESC) AS rnk
+       FROM (
+         SELECT ugr.user_id,
+           SUM(ugr.won) AS games_won,
+           ${POINTS_EXPR} AS points
+         FROM user_game_results ugr
+         JOIN users u ON u.id = ugr.user_id
+         JOIN ipl_daily_puzzles p ON p.day = ugr.puzzle_day
+         WHERE p.set_at >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) + 7 DAY)
+           AND p.set_at < DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)
+         GROUP BY ugr.user_id, u.email
+         HAVING games_won >= 1
+       ) sub
+     ) ranked
+     WHERE user_id = ?`,
+    [userId]
+  );
+  return rows[0]?.rnk != null ? Number(rows[0].rnk) : null;
+}
+
 async function getMonthlyLeaderboard() {
   const [rows] = await pool.execute(
     `SELECT
@@ -168,5 +213,5 @@ async function getMonthlyLeaderboard() {
 module.exports = {
   createTable, findByUserAndDay, create, getStatsByUser,
   bulkCreate, getTodayLeaderboard, getAllTimeLeaderboard,
-  getWeeklyLeaderboard, getMonthlyLeaderboard,
+  getWeeklyLeaderboard, getLastWeekLeaderboard, getLastWeekRankForUser, getMonthlyLeaderboard,
 };

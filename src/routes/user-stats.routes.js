@@ -7,6 +7,7 @@ router.post("/result", authRequired, userStatsController.saveResult);
 router.post("/sync-results", authRequired, userStatsController.syncResults);
 router.get("/leaderboard/today", userStatsController.todayLeaderboard);
 router.get("/leaderboard/weekly", userStatsController.weeklyLeaderboard);
+router.get("/leaderboard/last-week", userStatsController.lastWeekLeaderboard);
 router.get("/leaderboard/monthly", userStatsController.monthlyLeaderboard);
 router.get("/leaderboard/all-time", userStatsController.allTimeLeaderboard);
 

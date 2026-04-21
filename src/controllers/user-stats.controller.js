@@ -14,6 +14,7 @@ const TODAY_CACHE_MAX_ENTRIES = 2;
 const leaderboardCache = {
   allTime: null, allTimeExpiry: 0,
   weekly: null, weeklyExpiry: 0,
+  lastWeek: null, lastWeekExpiry: 0,
   monthly: null, monthlyExpiry: 0,
   today: new Map(),
   allTimeHard: null, allTimeHardExpiry: 0,
@@ -501,6 +502,24 @@ async function weeklyLeaderboard(req, res) {
       const hmSet = await getGodmodeEmailSet();
       return res.json({ success: true, data: tagHardMode(board, hmSet) });
     }
+    res.json({ success: true, data: board });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
+const LAST_WEEK_TTL = 60 * 60 * 1000;
+
+async function lastWeekLeaderboard(_req, res) {
+  try {
+    const now = Date.now();
+    if (leaderboardCache.lastWeek && now < leaderboardCache.lastWeekExpiry) {
+      return res.json({ success: true, data: leaderboardCache.lastWeek });
+    }
+    const rows = await UserGameResultModel.getLastWeekLeaderboard();
+    const board = buildPeriodBoard(rows);
+    leaderboardCache.lastWeek = board;
+    leaderboardCache.lastWeekExpiry = now + LAST_WEEK_TTL;
     res.json({ success: true, data: board });
   } catch (err) {
     res.status(err.status || 500).json({ success: false, message: err.message });
@@ -1065,7 +1084,7 @@ async function getArchivePlayed(req, res) {
 module.exports = {
   getMyStats, saveResult, syncResults,
   todayLeaderboard, allTimeLeaderboard,
-  weeklyLeaderboard, monthlyLeaderboard,
+  weeklyLeaderboard, lastWeekLeaderboard, monthlyLeaderboard,
   spliceTodayCache, spliceHardTodayCache, invalidateGodmodeEmailCache,
   saveHardModeResult, getMyHardModeStats, syncHardModeResults,
   todayHardModeLeaderboard, allTimeHardModeLeaderboard,
