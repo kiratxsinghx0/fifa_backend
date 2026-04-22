@@ -126,6 +126,20 @@ function computeStats(rows) {
 }
 
 /**
+ * Tail current streak from rows, but zeroed if the last result was a loss or
+ * the latest published puzzle is more than one day after the user's most
+ * recent result (missed a daily in sequence).
+ */
+function recomputeCurrentStreakWithCalendar(rows, latestPuzzleDay) {
+  if (!rows || rows.length === 0) return 0;
+  const s = computeStats(rows);
+  const last = rows[rows.length - 1];
+  if (!last.won) return 0;
+  if (latestPuzzleDay != null && latestPuzzleDay - last.puzzle_day > 1) return 0;
+  return s.currentStreak;
+}
+
+/**
  * Recompute and persist achievements for a user.
  * Pass mode = "normal" | "hard" | "both" to control which streaks are refreshed.
  */
@@ -133,20 +147,28 @@ async function refreshAchievements(userId, mode) {
   try {
     const existing = await UserAchievementsModel.findByUserId(userId);
     if (mode === "normal" || mode === "both") {
-      const rows = await UserGameResultModel.getStatsByUser(userId);
+      const [rows, latestPuzzle] = await Promise.all([
+        UserGameResultModel.getStatsByUser(userId),
+        IplDailyPuzzleModel.findLatest(),
+      ]);
       const stats = computeStats(rows);
+      const current = recomputeCurrentStreakWithCalendar(rows, latestPuzzle?.day ?? null);
       await UserAchievementsModel.updateNormalStreaks(
         userId,
-        stats.currentStreak,
+        current,
         Math.max(stats.maxStreak, existing?.normal_max_streak || 0),
       );
     }
     if (mode === "hard" || mode === "both") {
-      const rows = await UserHardModeResultModel.getStatsByUser(userId);
+      const [rows, latestPuzzle] = await Promise.all([
+        UserHardModeResultModel.getStatsByUser(userId),
+        IplHardmodeDailyPuzzleModel.findLatest(),
+      ]);
       const stats = computeStats(rows);
+      const current = recomputeCurrentStreakWithCalendar(rows, latestPuzzle?.day ?? null);
       await UserAchievementsModel.updateHardStreaks(
         userId,
-        stats.currentStreak,
+        current,
         Math.max(stats.maxStreak, existing?.hard_max_streak || 0),
       );
     }
@@ -168,27 +190,33 @@ function mergeWithPerModeBaseline(stats, user, mode) {
 
 async function getMyStats(req, res) {
   try {
-    const [rows, user, achievements] = await Promise.all([
+    const [rows, user, achievements, latestPuzzle] = await Promise.all([
       UserGameResultModel.getStatsByUser(req.userId),
       UserModel.findById(req.userId),
       UserAchievementsModel.findByUserId(req.userId),
+      IplDailyPuzzleModel.findLatest(),
     ]);
     const stats = computeStats(rows);
     const merged = user ? mergeWithPerModeBaseline(stats, user, "normal") : stats;
+    const latestDay = latestPuzzle?.day ?? null;
+    const rec = recomputeCurrentStreakWithCalendar(rows, latestDay);
     if (achievements) {
-      const staleCutoff = Date.now() - 24 * 60 * 60 * 1000;
-      const lastUpdated = new Date(achievements.updated_at).getTime();
-      const isStale = lastUpdated < staleCutoff;
-
-      if (isStale) {
-        merged.currentStreak = 0;
-        UserAchievementsModel.updateNormalStreaks(
-          req.userId, 0, Math.max(merged.maxStreak, achievements.normal_max_streak || 0)
-        ).catch(() => {});
-      } else {
-        merged.currentStreak = Math.max(merged.currentStreak, achievements.normal_current_streak || 0);
-      }
       merged.maxStreak = Math.max(merged.maxStreak, achievements.normal_max_streak || 0);
+      const last = rows.length ? rows[rows.length - 1] : null;
+      const valid = !!(last && last.won && (latestDay == null || latestDay - last.puzzle_day <= 1));
+      if (!valid) {
+        merged.currentStreak = 0;
+        if (achievements.normal_current_streak > 0) {
+          UserAchievementsModel.updateNormalStreaks(
+            req.userId, 0, Math.max(merged.maxStreak, achievements.normal_max_streak || 0)
+          ).catch(() => {});
+        }
+      } else {
+        const ach = achievements.normal_current_streak || 0;
+        merged.currentStreak = ach > 0 ? Math.min(ach, rec) : rec;
+      }
+    } else {
+      merged.currentStreak = rec;
     }
     res.json({ success: true, data: merged });
   } catch (err) {
@@ -949,27 +977,33 @@ async function updatePreferences(req, res) {
 
 async function getMyHardModeStats(req, res) {
   try {
-    const [rows, user, achievements] = await Promise.all([
+    const [rows, user, achievements, latestPuzzle] = await Promise.all([
       UserHardModeResultModel.getStatsByUser(req.userId),
       UserModel.findById(req.userId),
       UserAchievementsModel.findByUserId(req.userId),
+      IplHardmodeDailyPuzzleModel.findLatest(),
     ]);
     const stats = computeStats(rows);
     const merged = user ? mergeWithPerModeBaseline(stats, user, "hard") : stats;
+    const latestDay = latestPuzzle?.day ?? null;
+    const rec = recomputeCurrentStreakWithCalendar(rows, latestDay);
     if (achievements) {
-      const staleCutoff = Date.now() - 24 * 60 * 60 * 1000;
-      const lastUpdated = new Date(achievements.updated_at).getTime();
-      const isStale = lastUpdated < staleCutoff;
-
-      if (isStale) {
-        merged.currentStreak = 0;
-        UserAchievementsModel.updateHardStreaks(
-          req.userId, 0, Math.max(merged.maxStreak, achievements.hard_max_streak || 0)
-        ).catch(() => {});
-      } else {
-        merged.currentStreak = Math.max(merged.currentStreak, achievements.hard_current_streak || 0);
-      }
       merged.maxStreak = Math.max(merged.maxStreak, achievements.hard_max_streak || 0);
+      const last = rows.length ? rows[rows.length - 1] : null;
+      const valid = !!(last && last.won && (latestDay == null || latestDay - last.puzzle_day <= 1));
+      if (!valid) {
+        merged.currentStreak = 0;
+        if (achievements.hard_current_streak > 0) {
+          UserAchievementsModel.updateHardStreaks(
+            req.userId, 0, Math.max(merged.maxStreak, achievements.hard_max_streak || 0)
+          ).catch(() => {});
+        }
+      } else {
+        const ach = achievements.hard_current_streak || 0;
+        merged.currentStreak = ach > 0 ? Math.min(ach, rec) : rec;
+      }
+    } else {
+      merged.currentStreak = rec;
     }
     res.json({ success: true, data: merged });
   } catch (err) {
