@@ -34,6 +34,14 @@ async function findByUserAndDay(userId, puzzleDay) {
   return rows[0] || null;
 }
 
+async function findLatestBeforeDay(userId, beforeDay) {
+  const [rows] = await pool.execute(
+    "SELECT * FROM ipl_hardmode_user_results WHERE user_id = ? AND puzzle_day < ? ORDER BY puzzle_day DESC LIMIT 1",
+    [userId, beforeDay]
+  );
+  return rows[0] || null;
+}
+
 async function create(result) {
   const { user_id, puzzle_day, won, num_guesses, time_seconds } = result;
   const [out] = await pool.execute(
@@ -175,7 +183,7 @@ async function getTodayHardModeEmails(puzzleDay) {
 }
 
 module.exports = {
-  createTable, findByUserAndDay, create, getStatsByUser,
+  createTable, findByUserAndDay, findLatestBeforeDay, create, getStatsByUser,
   bulkCreate, getTodayLeaderboard, getAllTimeLeaderboard,
   getWeeklyLeaderboard, getMonthlyLeaderboard, getTodayHardModeEmails,
 };

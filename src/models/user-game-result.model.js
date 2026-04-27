@@ -35,6 +35,15 @@ async function findByUserAndDay(userId, puzzleDay) {
   return rows[0] || null;
 }
 
+/** Latest result with puzzle_day strictly less than `beforeDay` (sorted predecessor for incremental streak). */
+async function findLatestBeforeDay(userId, beforeDay) {
+  const [rows] = await pool.execute(
+    "SELECT * FROM user_game_results WHERE user_id = ? AND puzzle_day < ? ORDER BY puzzle_day DESC LIMIT 1",
+    [userId, beforeDay]
+  );
+  return rows[0] || null;
+}
+
 async function create(result) {
   const { user_id, puzzle_day, won, num_guesses, time_seconds, hints_used } = result;
   const [out] = await pool.execute(
@@ -211,7 +220,7 @@ async function getMonthlyLeaderboard() {
 }
 
 module.exports = {
-  createTable, findByUserAndDay, create, getStatsByUser,
+  createTable, findByUserAndDay, findLatestBeforeDay, create, getStatsByUser,
   bulkCreate, getTodayLeaderboard, getAllTimeLeaderboard,
   getWeeklyLeaderboard, getLastWeekLeaderboard, getLastWeekRankForUser, getMonthlyLeaderboard,
 };

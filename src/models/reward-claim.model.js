@@ -21,7 +21,7 @@ const CREATE_TABLE = "\
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\
 ";
 
-const REWARD_AMOUNTS = { 1: 150, 2: 100, 3: 50, 4: 50, 5: 50 };
+const REWARD_AMOUNTS = { 1: 50, 2: 50, 3: 50, 4: 50, 5: 50 };
 
 async function createTable() {
   await pool.execute(CREATE_TABLE);

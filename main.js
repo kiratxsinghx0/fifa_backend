@@ -33,6 +33,8 @@ const HardmodeLivePuzzleStatsModel = require("./src/models/hardmode-live-puzzle-
 const GameProgressModel = require("./src/models/ipl-game-progress.model");
 const HardModeGameProgressModel = require("./src/models/ipl-hardmode-game-progress.model");
 const UserAchievementsModel = require("./src/models/user-achievements.model");
+const UserNormalBadgesModel = require("./src/models/user-normal-badges.model");
+const UserHardBadgesModel = require("./src/models/user-hard-badges.model");
 const UserArchiveResultModel = require("./src/models/user-archive-result.model");
 const ChallengePlayerModel = require("./src/models/challenge-player.model");
 const ChallengeRoomModel = require("./src/models/challenge-room.model");
@@ -107,6 +109,8 @@ async function bootstrap() {
   await GameProgressModel.createTable();
   await HardModeGameProgressModel.createTable();
   await UserAchievementsModel.createTable();
+  await UserNormalBadgesModel.createTable();
+  await UserHardBadgesModel.createTable();
   await UserArchiveResultModel.createTable();
   await ChallengePlayerModel.createTable();
   await ChallengeRoomModel.createTable();

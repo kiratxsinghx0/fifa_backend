@@ -3,6 +3,7 @@ const userStatsController = require("../controllers/user-stats.controller");
 const { authRequired } = require("../middleware/auth");
 
 router.get("/stats", authRequired, userStatsController.getMyStats);
+router.get("/badges", authRequired, userStatsController.getMyBadges);
 router.post("/result", authRequired, userStatsController.saveResult);
 router.post("/sync-results", authRequired, userStatsController.syncResults);
 router.get("/leaderboard/today", userStatsController.todayLeaderboard);

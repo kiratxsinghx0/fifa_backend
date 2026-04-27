@@ -3,6 +3,8 @@ const UserHardModeResultModel = require("../models/user-hard-mode-result.model")
 const UserArchiveResultModel = require("../models/user-archive-result.model");
 const UserModel = require("../models/user.model");
 const UserAchievementsModel = require("../models/user-achievements.model");
+const UserNormalBadgesModel = require("../models/user-normal-badges.model");
+const UserHardBadgesModel = require("../models/user-hard-badges.model");
 const GameProgressModel = require("../models/ipl-game-progress.model");
 const HardModeGameProgressModel = require("../models/ipl-hardmode-game-progress.model");
 const IplDailyPuzzleModel = require("../models/ipl-daily-puzzle.model");
@@ -140,40 +142,190 @@ function recomputeCurrentStreakWithCalendar(rows, latestPuzzleDay) {
 }
 
 /**
- * Recompute and persist achievements for a user.
- * Pass mode = "normal" | "hard" | "both" to control which streaks are refreshed.
+ * Streak after appending one result (same rules as computeStats on sorted rows).
+ */
+function nextStreakAfterNewResult(prevCurrent, prevMax, puzzleDay, won, prevRow) {
+  const isConsecutive = !prevRow || puzzleDay === prevRow.puzzle_day + 1;
+  let newCurrent;
+  if (!won) {
+    newCurrent = 0;
+  } else if (isConsecutive) {
+    newCurrent = prevRow && (prevRow.won === 1 || prevRow.won === true) ? prevCurrent + 1 : 1;
+  } else {
+    newCurrent = 1;
+  }
+  const newMax = Math.max(prevMax || 0, newCurrent);
+  return { newCurrent, newMax };
+}
+
+/**
+ * Full streak recompute from all result rows + persist anchors (after bulk sync or stale incremental).
+ */
+async function reconcileStreakFromAllRows(userId, mode) {
+  const existing = await UserAchievementsModel.findByUserId(userId);
+  if (mode === "normal" || mode === "both") {
+    const [rows, latestPuzzle] = await Promise.all([
+      UserGameResultModel.getStatsByUser(userId),
+      IplDailyPuzzleModel.findLatest(),
+    ]);
+    const stats = computeStats(rows);
+    const current = recomputeCurrentStreakWithCalendar(rows, latestPuzzle?.day ?? null);
+    const max = Math.max(stats.maxStreak, existing?.normal_max_streak || 0);
+    const last = rows.length ? rows[rows.length - 1] : null;
+    if (last) {
+      await UserAchievementsModel.persistNormalStreakAndAnchors(
+        userId,
+        current,
+        max,
+        last.puzzle_day,
+        last.won === 1 || last.won === true,
+      );
+    } else {
+      await UserAchievementsModel.persistNormalStreakAndAnchors(userId, current, max, null, null);
+    }
+    try {
+      await UserNormalBadgesModel.applyStreakMilestones(userId, max);
+    } catch (err) {
+      console.error("[badges] normal applyStreakMilestones failed", { userId, message: err?.message });
+    }
+  }
+  if (mode === "hard" || mode === "both") {
+    const [rows, latestPuzzle] = await Promise.all([
+      UserHardModeResultModel.getStatsByUser(userId),
+      IplHardmodeDailyPuzzleModel.findLatest(),
+    ]);
+    const stats = computeStats(rows);
+    const current = recomputeCurrentStreakWithCalendar(rows, latestPuzzle?.day ?? null);
+    const max = Math.max(stats.maxStreak, existing?.hard_max_streak || 0);
+    const last = rows.length ? rows[rows.length - 1] : null;
+    if (last) {
+      await UserAchievementsModel.persistHardStreakAndAnchors(
+        userId,
+        current,
+        max,
+        last.puzzle_day,
+        last.won === 1 || last.won === true,
+      );
+    } else {
+      await UserAchievementsModel.persistHardStreakAndAnchors(userId, current, max, null, null);
+    }
+    try {
+      await UserHardBadgesModel.applyStreakMilestones(userId, max);
+    } catch (err) {
+      console.error("[badges] hard applyStreakMilestones failed", { userId, message: err?.message });
+    }
+  }
+}
+
+async function applyIncrementalNormalStreak(userId, puzzleDay, wonBool) {
+  try {
+    const ach = await UserAchievementsModel.findByUserId(userId);
+    const useSynthetic = ach != null && ach.normal_last_streak_puzzle_day === puzzleDay - 1;
+    let prevRow;
+    if (useSynthetic) {
+      prevRow = {
+        puzzle_day: puzzleDay - 1,
+        won: ach.normal_last_result_won === 1 || ach.normal_last_result_won === true,
+      };
+    } else {
+      prevRow = await UserGameResultModel.findLatestBeforeDay(userId, puzzleDay);
+      if (
+        prevRow
+        && ach != null
+        && ach.normal_last_streak_puzzle_day != null
+        && prevRow.puzzle_day !== ach.normal_last_streak_puzzle_day
+      ) {
+        await reconcileStreakFromAllRows(userId, "normal");
+        return;
+      }
+    }
+    const prevCurrent = ach?.normal_current_streak || 0;
+    const prevMax = ach?.normal_max_streak || 0;
+    const { newCurrent, newMax } = nextStreakAfterNewResult(
+      prevCurrent,
+      prevMax,
+      puzzleDay,
+      wonBool,
+      prevRow,
+    );
+    await UserAchievementsModel.persistNormalStreakAndAnchors(
+      userId,
+      newCurrent,
+      newMax,
+      puzzleDay,
+      wonBool,
+    );
+  } catch (err) {
+    console.error("[streak] applyIncrementalNormalStreak failed", {
+      userId,
+      puzzleDay,
+      message: err?.message,
+      stack: err?.stack,
+    });
+  }
+}
+
+async function applyIncrementalHardStreak(userId, puzzleDay, wonBool) {
+  try {
+    const ach = await UserAchievementsModel.findByUserId(userId);
+    const useSynthetic = ach != null && ach.hard_last_streak_puzzle_day === puzzleDay - 1;
+    let prevRow;
+    if (useSynthetic) {
+      prevRow = {
+        puzzle_day: puzzleDay - 1,
+        won: ach.hard_last_result_won === 1 || ach.hard_last_result_won === true,
+      };
+    } else {
+      prevRow = await UserHardModeResultModel.findLatestBeforeDay(userId, puzzleDay);
+      if (
+        prevRow
+        && ach != null
+        && ach.hard_last_streak_puzzle_day != null
+        && prevRow.puzzle_day !== ach.hard_last_streak_puzzle_day
+      ) {
+        await reconcileStreakFromAllRows(userId, "hard");
+        return;
+      }
+    }
+    const prevCurrent = ach?.hard_current_streak || 0;
+    const prevMax = ach?.hard_max_streak || 0;
+    const { newCurrent, newMax } = nextStreakAfterNewResult(
+      prevCurrent,
+      prevMax,
+      puzzleDay,
+      wonBool,
+      prevRow,
+    );
+    await UserAchievementsModel.persistHardStreakAndAnchors(
+      userId,
+      newCurrent,
+      newMax,
+      puzzleDay,
+      wonBool,
+    );
+  } catch (err) {
+    console.error("[streak] applyIncrementalHardStreak failed", {
+      userId,
+      puzzleDay,
+      message: err?.message,
+      stack: err?.stack,
+    });
+  }
+}
+
+/**
+ * Recompute and persist streaks from all rows (e.g. after bulk sync). Prefer applyIncremental* on single saves.
  */
 async function refreshAchievements(userId, mode) {
   try {
-    const existing = await UserAchievementsModel.findByUserId(userId);
-    if (mode === "normal" || mode === "both") {
-      const [rows, latestPuzzle] = await Promise.all([
-        UserGameResultModel.getStatsByUser(userId),
-        IplDailyPuzzleModel.findLatest(),
-      ]);
-      const stats = computeStats(rows);
-      const current = recomputeCurrentStreakWithCalendar(rows, latestPuzzle?.day ?? null);
-      await UserAchievementsModel.updateNormalStreaks(
-        userId,
-        current,
-        Math.max(stats.maxStreak, existing?.normal_max_streak || 0),
-      );
-    }
-    if (mode === "hard" || mode === "both") {
-      const [rows, latestPuzzle] = await Promise.all([
-        UserHardModeResultModel.getStatsByUser(userId),
-        IplHardmodeDailyPuzzleModel.findLatest(),
-      ]);
-      const stats = computeStats(rows);
-      const current = recomputeCurrentStreakWithCalendar(rows, latestPuzzle?.day ?? null);
-      await UserAchievementsModel.updateHardStreaks(
-        userId,
-        current,
-        Math.max(stats.maxStreak, existing?.hard_max_streak || 0),
-      );
-    }
-  } catch {
-    /* non-critical */
+    await reconcileStreakFromAllRows(userId, mode);
+  } catch (err) {
+    console.error("[streak] refreshAchievements failed", {
+      userId,
+      mode,
+      message: err?.message,
+      stack: err?.stack,
+    });
   }
 }
 
@@ -188,6 +340,18 @@ function mergeWithPerModeBaseline(stats, user, mode) {
   };
 }
 
+async function getMyBadges(req, res) {
+  try {
+    const [normal, hard] = await Promise.all([
+      UserNormalBadgesModel.findByUserId(req.userId),
+      UserHardBadgesModel.findByUserId(req.userId),
+    ]);
+    res.json({ success: true, data: { normal, hard } });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message });
+  }
+}
+
 async function getMyStats(req, res) {
   try {
     const [rows, user, achievements, latestPuzzle] = await Promise.all([
@@ -200,21 +364,11 @@ async function getMyStats(req, res) {
     const merged = user ? mergeWithPerModeBaseline(stats, user, "normal") : stats;
     const latestDay = latestPuzzle?.day ?? null;
     const rec = recomputeCurrentStreakWithCalendar(rows, latestDay);
+    const last = rows.length ? rows[rows.length - 1] : null;
+    const calendarGapBroken = !!(last && last.won && latestDay != null && latestDay - last.puzzle_day > 1);
     if (achievements) {
       merged.maxStreak = Math.max(merged.maxStreak, achievements.normal_max_streak || 0);
-      const last = rows.length ? rows[rows.length - 1] : null;
-      const valid = !!(last && last.won && (latestDay == null || latestDay - last.puzzle_day <= 1));
-      if (!valid) {
-        merged.currentStreak = 0;
-        if (achievements.normal_current_streak > 0) {
-          UserAchievementsModel.updateNormalStreaks(
-            req.userId, 0, Math.max(merged.maxStreak, achievements.normal_max_streak || 0)
-          ).catch(() => {});
-        }
-      } else {
-        const ach = achievements.normal_current_streak || 0;
-        merged.currentStreak = ach > 0 ? Math.min(ach, rec) : rec;
-      }
+      merged.currentStreak = calendarGapBroken ? 0 : (achievements.normal_current_streak || 0);
     } else {
       merged.currentStreak = rec;
     }
@@ -302,7 +456,20 @@ async function saveResult(req, res) {
       });
     }
 
-    refreshAchievements(req.userId, "normal").catch(() => {});
+    await applyIncrementalNormalStreak(req.userId, day, wonBool);
+
+    try {
+      const ach = await UserAchievementsModel.findByUserId(req.userId);
+      if (ach) {
+        await UserNormalBadgesModel.applyAfterNormalGame(req.userId, {
+          maxStreak: ach.normal_max_streak,
+          won: wonBool,
+          numGuesses: guesses,
+        });
+      }
+    } catch (err) {
+      console.error("[badges] applyAfterNormalGame failed", { userId: req.userId, message: err?.message });
+    }
 
     const deviceId = req.body.device_id || req.headers["x-device-id"];
     if (deviceId) {
@@ -373,7 +540,20 @@ async function syncResults(req, res) {
       }
     }
 
-    refreshAchievements(req.userId, "normal").catch(() => {});
+    if (valid.length > 0) {
+      await refreshAchievements(req.userId, "normal");
+      try {
+        const ach = await UserAchievementsModel.findByUserId(req.userId);
+        if (ach) {
+          await UserNormalBadgesModel.applyStreakMilestones(req.userId, ach.normal_max_streak);
+          for (const v of valid) {
+            await UserNormalBadgesModel.applyStumpdFromGame(req.userId, v.won, v.num_guesses);
+          }
+        }
+      } catch (err) {
+        console.error("[badges] normal sync badges failed", { userId: req.userId, message: err?.message });
+      }
+    }
 
     res.json({ success: true, data: merged, synced: valid.length });
   } catch (err) {
@@ -683,7 +863,20 @@ async function saveHardModeResult(req, res) {
       }
     }
 
-    refreshAchievements(req.userId, "hard").catch(() => {});
+    await applyIncrementalHardStreak(req.userId, day, wonBool);
+
+    try {
+      const ach = await UserAchievementsModel.findByUserId(req.userId);
+      if (ach) {
+        await UserHardBadgesModel.applyAfterHardGame(req.userId, {
+          maxStreak: ach.hard_max_streak,
+          won: wonBool,
+          numGuesses: guesses,
+        });
+      }
+    } catch (err) {
+      console.error("[badges] applyAfterHardGame failed", { userId: req.userId, message: err?.message });
+    }
 
     const deviceId = req.body.device_id || req.headers["x-device-id"];
     if (deviceId) {
@@ -987,21 +1180,11 @@ async function getMyHardModeStats(req, res) {
     const merged = user ? mergeWithPerModeBaseline(stats, user, "hard") : stats;
     const latestDay = latestPuzzle?.day ?? null;
     const rec = recomputeCurrentStreakWithCalendar(rows, latestDay);
+    const last = rows.length ? rows[rows.length - 1] : null;
+    const calendarGapBroken = !!(last && last.won && latestDay != null && latestDay - last.puzzle_day > 1);
     if (achievements) {
       merged.maxStreak = Math.max(merged.maxStreak, achievements.hard_max_streak || 0);
-      const last = rows.length ? rows[rows.length - 1] : null;
-      const valid = !!(last && last.won && (latestDay == null || latestDay - last.puzzle_day <= 1));
-      if (!valid) {
-        merged.currentStreak = 0;
-        if (achievements.hard_current_streak > 0) {
-          UserAchievementsModel.updateHardStreaks(
-            req.userId, 0, Math.max(merged.maxStreak, achievements.hard_max_streak || 0)
-          ).catch(() => {});
-        }
-      } else {
-        const ach = achievements.hard_current_streak || 0;
-        merged.currentStreak = ach > 0 ? Math.min(ach, rec) : rec;
-      }
+      merged.currentStreak = calendarGapBroken ? 0 : (achievements.hard_current_streak || 0);
     } else {
       merged.currentStreak = rec;
     }
@@ -1069,7 +1252,20 @@ async function syncHardModeResults(req, res) {
       }
     }
 
-    refreshAchievements(req.userId, "hard").catch(() => {});
+    if (valid.length > 0) {
+      await refreshAchievements(req.userId, "hard");
+      try {
+        const ach = await UserAchievementsModel.findByUserId(req.userId);
+        if (ach) {
+          await UserHardBadgesModel.applyStreakMilestones(req.userId, ach.hard_max_streak);
+          for (const v of valid) {
+            await UserHardBadgesModel.applyStumpdFromGame(req.userId, v.won, v.num_guesses);
+          }
+        }
+      } catch (err) {
+        console.error("[badges] hard sync badges failed", { userId: req.userId, message: err?.message });
+      }
+    }
 
     res.json({ success: true, data: stats, synced: valid.length });
   } catch (err) {
@@ -1116,7 +1312,7 @@ async function getArchivePlayed(req, res) {
 }
 
 module.exports = {
-  getMyStats, saveResult, syncResults,
+  getMyStats, getMyBadges, saveResult, syncResults,
   todayLeaderboard, allTimeLeaderboard,
   weeklyLeaderboard, lastWeekLeaderboard, monthlyLeaderboard,
   spliceTodayCache, spliceHardTodayCache, invalidateGodmodeEmailCache,
