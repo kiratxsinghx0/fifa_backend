@@ -724,7 +724,7 @@ async function lastWeekLeaderboard(_req, res) {
     if (leaderboardCache.lastWeek && now < leaderboardCache.lastWeekExpiry) {
       return res.json({ success: true, data: leaderboardCache.lastWeek });
     }
-    const rows = await UserGameResultModel.getLastWeekLeaderboard();
+    const rows = await UserGameResultModel.getLastWeekLeaderboard(10);
     const board = buildPeriodBoard(rows);
     leaderboardCache.lastWeek = board;
     leaderboardCache.lastWeekExpiry = now + LAST_WEEK_TTL;

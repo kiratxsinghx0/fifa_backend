@@ -163,7 +163,7 @@ async function bootstrap() {
   // Weekly winners snapshot: Monday 6:05 AM IST = 00:35 UTC
   const { snapshotWeeklyWinners } = require("./src/controllers/rewards.controller");
   cron.schedule("35 0 * * 1", async () => {
-    console.log("[CRON] Snapshotting last week's top 5 winners…");
+    console.log("[CRON] Snapshotting last week's top 10 for weekly pool…");
     try {
       const result = await snapshotWeeklyWinners();
       if (result.weekNumber === null) {

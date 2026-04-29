@@ -155,7 +155,9 @@ async function getWeeklyLeaderboard() {
   return rows;
 }
 
-async function getLastWeekLeaderboard() {
+async function getLastWeekLeaderboard(limit = 5) {
+  const safeLimit = Math.min(Math.max(parseInt(String(limit), 10) || 5, 1), 100);
+  /* LIMIT cannot use a bound param with some MySQL + prepared-statement setups (ER_WRONG_ARGUMENTS). */
   const [rows] = await pool.execute(
     `SELECT
        ugr.user_id,
@@ -170,7 +172,7 @@ async function getLastWeekLeaderboard() {
      GROUP BY ugr.user_id, u.email
      HAVING games_won >= 1
      ORDER BY points DESC, games_won DESC
-     LIMIT 5`
+     LIMIT ${safeLimit}`
   );
   return rows;
 }
