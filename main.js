@@ -44,7 +44,13 @@ const UserActivityModel = require("./src/models/user-activity.model");
 const ChallengeConversionModel = require("./src/models/challenge-conversion.model");
 const WeeklyWinnersModel = require("./src/models/weekly-winners.model");
 const RewardClaimModel = require("./src/models/reward-claim.model");
+const RandomChallengeRoomModel = require("./src/models/random-challenge-room.model");
+const RandomChallengeRoundModel = require("./src/models/random-challenge-round.model");
+const RandomChallengeGuessModel = require("./src/models/random-challenge-guess.model");
+const RandomMatchmakingQueueModel = require("./src/models/random-matchmaking-queue.model");
+const randomRoutes = require("./src/routes/random.routes");
 const { initChallengeSocket } = require("./src/socket/challenge-socket");
+const { initRandomSocket } = require("./src/socket/random-socket");
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -79,6 +85,7 @@ app.use("/api/user", userStatsRoutes);
 app.use("/api/live-stats", liveStatsRoutes);
 app.use("/api/live-stats/hard-mode", hardmodeLiveStatsRoutes);
 app.use("/api/challenge", challengeRoutes);
+app.use("/api/random", randomRoutes);
 app.use("/api/rewards", rewardsRoutes);
 
 app.use((_req, res) => {
@@ -118,12 +125,18 @@ async function bootstrap() {
   await ChallengeGuessModel.createTable();
   await UserActivityModel.createTable();
   await ChallengeConversionModel.createTable();
+  await RandomChallengeRoomModel.createTable();
+  await RandomChallengeRoundModel.createTable();
+  await RandomChallengeGuessModel.createTable();
+  await RandomMatchmakingQueueModel.createTable();
   await WeeklyWinnersModel.createTable();
   await RewardClaimModel.createTable();
   console.log("Database tables ensured");
 
   initChallengeSocket(io);
   console.log("Socket.IO challenge handler initialized");
+  initRandomSocket(io);
+  console.log("Socket.IO random match handler initialized");
 
   server = httpServer.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
@@ -184,6 +197,12 @@ async function bootstrap() {
       if (expired > 0) console.log(`[CRON] Expired ${expired} stale challenge rooms`);
     } catch (err) {
       console.error("[CRON] Failed to expire challenge rooms:", err.message);
+    }
+    try {
+      const expiredRandom = await RandomChallengeRoomModel.expireOldRooms(15);
+      if (expiredRandom > 0) console.log(`[CRON] Expired ${expiredRandom} stale random match rooms`);
+    } catch (err) {
+      console.error("[CRON] Failed to expire random match rooms:", err.message);
     }
   });
 }
